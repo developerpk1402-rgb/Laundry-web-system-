@@ -1,0 +1,7 @@
+{
+  "name": "LavanFlow - Modern Laundry Management System",
+  "description": "A comprehensive, multi-branch laundry management platform with order tracking, billing, tax receipts (NCF), and advanced reporting.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
