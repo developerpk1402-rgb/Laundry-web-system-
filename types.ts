@@ -7,6 +7,18 @@ export enum UserRole {
   SPECIAL = 'Special'
 }
 
+export enum Permission {
+  VIEW_REPORTS = 'view_reports',
+  MANAGE_BRANCHES = 'manage_branches',
+  MANAGE_STAFF = 'manage_staff',
+  CREATE_ORDERS = 'create_orders',
+  EDIT_ORDERS = 'edit_orders',
+  DELETE_ORDERS = 'delete_orders',
+  PROCESS_INVOICE = 'process_invoice',
+  GENERATE_NCF = 'generate_ncf',
+  SYSTEM_LOGS = 'system_logs'
+}
+
 export enum OrderStatus {
   RECEIVED = 'Received',
   IN_PROCESS = 'In Process',
@@ -27,6 +39,45 @@ export enum ServiceType {
   ALTERATIONS = 'Alterations'
 }
 
+export enum AuditAction {
+  LOGIN = 'LOGIN',
+  ORDER_CREATE = 'ORDER_CREATE',
+  ORDER_STATUS_CHANGE = 'ORDER_STATUS_CHANGE',
+  INVOICE_PROCESS = 'INVOICE_PROCESS',
+  NCF_BURN = 'NCF_BURN',
+  STAFF_UPDATE = 'STAFF_UPDATE',
+  BRANCH_SWITCH = 'BRANCH_SWITCH',
+  SUPPLY_UPDATE = 'SUPPLY_UPDATE',
+  DATABASE_BACKUP = 'DATABASE_BACKUP'
+}
+
+export enum BackupType {
+  AUTOMATED = 'AUTOMATED',
+  MANUAL = 'MANUAL',
+  SYSTEM_CHECK = 'SYSTEM_CHECK'
+}
+
+export interface BackupLog {
+  id: string;
+  timestamp: number;
+  type: BackupType;
+  status: 'SUCCESS' | 'FAILED';
+  fileSize?: number;
+  storagePath?: string;
+  details?: string;
+}
+
+export interface AuditLog {
+  id: string;
+  timestamp: number;
+  userId: string;
+  username: string;
+  branchId: string;
+  action: AuditAction;
+  details: string;
+  metadata?: any;
+}
+
 export enum VoucherStatus {
   ACTIVE = 'Active',
   LOW = 'Low Stock',
@@ -37,7 +88,7 @@ export enum VoucherStatus {
 export interface VoucherRange {
   id: string;
   type: TaxReceiptType;
-  prefix: string; // B01, B02, etc.
+  prefix: string;
   start: number;
   end: number;
   current: number;
@@ -107,9 +158,9 @@ export interface Branch {
 }
 
 export interface WorkSchedule {
-  days: string[]; // ['Mon', 'Tue', ...]
-  startTime: string; // '08:00'
-  endTime: string; // '18:00'
+  days: string[];
+  startTime: string;
+  endTime: string;
 }
 
 export interface User {
@@ -123,6 +174,7 @@ export interface User {
   schedule?: WorkSchedule;
   bio?: string;
   avatar?: string;
+  permissions?: Permission[];
 }
 
 export interface ChatMessage {
@@ -144,7 +196,7 @@ export interface Conversation {
   name?: string;
 }
 
-export type NotificationType = 'sale' | 'status' | 'system' | 'staff';
+export type NotificationType = 'sale' | 'status' | 'system' | 'staff' | 'backup';
 
 export interface Notification {
   id: string;

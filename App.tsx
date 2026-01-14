@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -564,12 +565,12 @@ const App: React.FC = () => {
                 <Routes>
                   <Route path="/" element={<Dashboard branch={activeBranch} user={user} />} />
                   <Route path="/new-order" element={<CreateOrder branch={activeBranch} user={user} />} />
-                  <Route path="/orders" element={<OrderStatus branch={activeBranch} />} />
+                  <Route path="/orders" element={<OrderStatus branch={activeBranch} user={user} />} />
                   <Route path="/invoicing" element={<Invoicing branch={activeBranch} user={user} />} />
                   <Route path="/chat" element={<InternalChat user={user} />} />
                   <Route path="/customers" element={<Customers />} />
                   <Route path="/reports" element={<Reports branch={activeBranch} />} />
-                  <Route path="/settings" element={<SettingsPage branch={activeBranch} onBranchChange={setActiveBranch} onSetMaintenance={setIsMaintenanceMode} isMaintenance={isMaintenanceMode} />} />
+                  <Route path="/settings" element={<SettingsPage branch={activeBranch} onBranchChange={setActiveBranch} onSetMaintenance={setIsMaintenanceMode} isMaintenance={isMaintenanceMode} user={user} />} />
                   <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
               </div>

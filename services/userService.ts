@@ -1,50 +1,41 @@
+import { User, UserRole, Permission } from '../types';
+import { getActiveStaff, updateStaffStatus, getStaffProfile } from '../lib/api/staff';
+import { api } from '../lib/api-client';
 
-import { User, UserRole, WorkSchedule } from '../types';
+const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
+  [UserRole.ADMIN]: Object.values(Permission),
+  [UserRole.SPECIAL]: [Permission.VIEW_REPORTS, Permission.SYSTEM_LOGS],
+  [UserRole.CASHIER]: [Permission.CREATE_ORDERS, Permission.EDIT_ORDERS, Permission.PROCESS_INVOICE, Permission.GENERATE_NCF],
+  [UserRole.SALESPERSON]: [Permission.CREATE_ORDERS, Permission.EDIT_ORDERS],
+  [UserRole.OPERATOR]: [Permission.EDIT_ORDERS]
+};
 
-const STORAGE_KEY = 'lavanflow_users_db';
+export const getUsers = async (): Promise<User[]> => {
+  return api.get('/staff');
+};
 
-const INITIAL_USERS: User[] = [
-  {
-    id: 'admin-global',
-    username: 'Administrator',
-    role: UserRole.ADMIN,
-    branchId: 'b1',
-    isActive: true,
-    schedule: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], startTime: '08:00', endTime: '20:00' }
+export const getEmployeesByBranch = async (branchId: string): Promise<User[]> => {
+  return getActiveStaff(branchId);
+};
+
+export const saveUser = async (user: Partial<User>): Promise<User> => {
+  if (user.id) {
+    return api.patch(`/staff/${user.id}`, user);
   }
-];
-
-export const getUsers = (): User[] => {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) return JSON.parse(saved);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_USERS));
-  return INITIAL_USERS;
+  return api.post('/staff', user);
 };
 
-export const getEmployeesByBranch = (branchId: string): User[] => {
-  return getUsers().filter(u => u.branchId === branchId);
-};
-
-export const saveUser = (user: User) => {
-  const users = getUsers();
-  const index = users.findIndex(u => u.id === user.id);
-  if (index >= 0) {
-    users[index] = user;
-  } else {
-    users.push(user);
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-  return users;
-};
-
-export const deleteUser = (id: string) => {
-  const users = getUsers().filter(u => u.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(users));
-  return users;
+export const deleteUser = async (id: string): Promise<void> => {
+  return api.delete(`/staff/${id}`);
 };
 
 export const generateUserId = (): string => {
   return `u-${Math.random().toString(36).substr(2, 9)}`;
+};
+
+export const hasPermission = (user: User, permission: Permission): boolean => {
+  if (user.role === UserRole.ADMIN) return true;
+  return user.permissions?.includes(permission) || false;
 };
 
 export const isEmployeeOnDuty = (user: User): boolean => {

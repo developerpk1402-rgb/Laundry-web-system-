@@ -27,8 +27,9 @@ const InternalChat: React.FC<{ user: User }> = ({ user }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const loadData = () => {
-      const convs = getConversations(user);
+    // Fix: Make loadData async to await getConversations.
+    const loadData = async () => {
+      const convs = await getConversations(user);
       setConversations(convs);
       if (!selectedConv && convs.length > 0) {
         setSelectedConv(convs[0]);
@@ -41,8 +42,9 @@ const InternalChat: React.FC<{ user: User }> = ({ user }) => {
 
   useEffect(() => {
     if (selectedConv) {
-      const loadMessages = () => {
-        const msgs = getMessages(selectedConv.id);
+      // Fix: Make loadMessages async to await getMessages.
+      const loadMessages = async () => {
+        const msgs = await getMessages(selectedConv.id);
         setMessages(msgs);
       };
       loadMessages();
@@ -55,11 +57,12 @@ const InternalChat: React.FC<{ user: User }> = ({ user }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!inputText.trim() || !selectedConv) return;
 
-    const msg = sendMessage(user, selectedConv.id, inputText);
+    // Fix: Await sendMessage.
+    const msg = await sendMessage(user, selectedConv.id, inputText);
     setMessages([...messages, msg]);
     setInputText('');
   };

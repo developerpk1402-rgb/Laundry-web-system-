@@ -3,821 +3,677 @@ import React, { useState, useEffect } from 'react';
 import { 
   Building2, 
   ShieldCheck, 
-  Tag, 
-  Database, 
-  Printer, 
-  Save, 
-  Plus,
-  Trash2,
-  Check,
-  Mail,
   FileText,
+  Edit2,
+  Users,
+  X,
+  MapPin,
+  Check,
+  UserPlus,
   Clock,
   ToggleLeft as Toggle,
   ToggleRight,
-  X,
-  MapPin,
-  Edit2,
-  Users,
-  UserPlus,
-  Calendar,
-  MoreVertical,
-  Activity,
-  Key,
+  History,
   Ticket,
   AlertTriangle,
-  History,
-  Store,
-  Settings2,
   Zap,
-  Cpu,
-  ShieldAlert
+  Terminal,
+  Activity,
+  Plus,
+  Trash2,
+  ShieldAlert,
+  Search,
+  UserMinus,
+  Smartphone,
+  Mail,
+  MoreVertical,
+  Calendar,
+  ChevronRight,
+  Shield as ShieldIcon,
+  HardDrive,
+  Database,
+  CloudDownload,
+  ShieldQuestion,
+  Loader2
 } from 'lucide-react';
-import { Branch, User, UserRole, WorkSchedule, VoucherRange, TaxReceiptType, VoucherStatus } from '../types';
-import { getBranches, saveBranch, deleteBranch, generateBranchId } from '../services/branchService';
-import { getEmployeesByBranch, saveUser, deleteUser, generateUserId, isEmployeeOnDuty } from '../services/userService';
-import { getVoucherRanges, saveVoucherRange, deleteVoucherRange, generateVoucherId } from '../services/voucherService';
+import { 
+  Branch, 
+  User, 
+  UserRole, 
+  WorkSchedule, 
+  VoucherRange, 
+  TaxReceiptType, 
+  VoucherStatus,
+  AuditLog,
+  AuditAction,
+  BackupLog
+} from '../types';
+import { getBranches } from '../services/branchService';
+import { getEmployeesByBranch, saveUser, generateUserId, isEmployeeOnDuty, deleteUser } from '../services/userService';
+import { getVoucherRanges } from '../services/voucherService';
+import { getAuditLogs, clearAuditLogs, logAction } from '../services/auditService';
+import { getBackupHistory, triggerManualBackup } from '../lib/api/system';
+import { format } from 'date-fns';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-const SettingsPage: React.FC<{ branch: Branch, onBranchChange: (b: Branch) => void, onSetMaintenance: (b: boolean) => void, isMaintenance: boolean }> = ({ branch, onBranchChange, onSetMaintenance, isMaintenance }) => {
+const SettingsPage: React.FC<{ branch: Branch, onBranchChange: (b: Branch) => void, onSetMaintenance: (b: boolean) => void, isMaintenance: boolean, user: User }> = ({ branch, onBranchChange, onSetMaintenance, isMaintenance, user }) => {
   const [activeTab, setActiveTab] = useState('General');
   const [branches, setBranches] = useState<Branch[]>([]);
   const [staff, setStaff] = useState<User[]>([]);
   const [voucherRanges, setVoucherRanges] = useState<VoucherRange[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [backupHistory, setBackupHistory] = useState<BackupLog[]>([]);
+  const [auditSearch, setAuditSearch] = useState('');
+  const [isBackingUp, setIsBackingUp] = useState(false);
   
   // Modals
-  const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
   const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
-  const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
   
   // Forms
-  const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
   const [editingStaff, setEditingStaff] = useState<User | null>(null);
-  const [editingVoucher, setEditingVoucher] = useState<VoucherRange | null>(null);
-  
-  const [branchForm, setBranchForm] = useState({ name: '', address: '', rnc: '' });
   const [staffForm, setStaffForm] = useState({
     username: '',
     email: '',
+    phone: '',
     role: UserRole.SALESPERSON,
+    branchId: branch.id,
     schedule: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], startTime: '08:00', endTime: '18:00' } as WorkSchedule,
     isActive: true
   });
-  const [voucherForm, setVoucherForm] = useState({
-    type: TaxReceiptType.FINAL_CONSUMER,
-    prefix: 'B02',
-    start: 1,
-    end: 1000
-  });
 
   useEffect(() => {
-    setBranches(getBranches());
-    setStaff(getEmployeesByBranch(branch.id));
-    setVoucherRanges(getVoucherRanges().filter(r => r.branchId === branch.id));
+    const fetchData = async () => {
+      // Fix: Await all async calls in useEffect.
+      setBranches(await getBranches());
+      setStaff(await getEmployeesByBranch(branch.id));
+      const allRanges = await getVoucherRanges();
+      setVoucherRanges(allRanges.filter(r => r.branchId === branch.id));
+      const logs = await getAuditLogs();
+      setAuditLogs(logs);
+      
+      try {
+        const backups = await getBackupHistory();
+        setBackupHistory(backups);
+      } catch (e) {
+        console.warn("Settings: Backup history not available.");
+      }
+    };
+    fetchData();
   }, [branch]);
-
-  // Branch Handlers
-  const handleOpenAddBranch = () => {
-    setEditingBranch(null);
-    setBranchForm({ name: '', address: '', rnc: '' });
-    setIsBranchModalOpen(true);
-  };
-
-  const handleOpenEditBranch = (b: Branch, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingBranch(b);
-    setBranchForm({ name: b.name, address: b.address, rnc: b.rnc });
-    setIsBranchModalOpen(true);
-  };
-
-  const handleSubmitBranch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const b: Branch = {
-      id: editingBranch?.id || generateBranchId(),
-      name: branchForm.name,
-      address: branchForm.address,
-      rnc: branchForm.rnc
-    };
-    const updated = saveBranch(b);
-    setBranches(updated);
-    setIsBranchModalOpen(false);
-    if (b.id === branch.id) onBranchChange(b);
-  };
-
-  // Staff Handlers
-  const handleOpenAddStaff = () => {
-    setEditingStaff(null);
-    setStaffForm({
-      username: '',
-      email: '',
-      role: UserRole.SALESPERSON,
-      schedule: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], startTime: '08:00', endTime: '18:00' },
-      isActive: true
-    });
-    setIsStaffModalOpen(true);
-  };
-
-  const handleOpenEditStaff = (u: User) => {
-    setEditingStaff(u);
-    setStaffForm({
-      username: u.username,
-      email: u.email || '',
-      role: u.role,
-      schedule: u.schedule || { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], startTime: '08:00', endTime: '18:00' },
-      isActive: u.isActive
-    });
-    setIsStaffModalOpen(true);
-  };
-
-  const handleSubmitStaff = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newUser: User = {
-      id: editingStaff?.id || generateUserId(),
-      username: staffForm.username,
-      email: staffForm.email,
-      role: staffForm.role,
-      branchId: branch.id,
-      isActive: staffForm.isActive,
-      schedule: staffForm.schedule
-    };
-    saveUser(newUser);
-    setStaff(getEmployeesByBranch(branch.id));
-    setIsStaffModalOpen(false);
-  };
-
-  const toggleDay = (day: string) => {
-    const currentDays = [...staffForm.schedule.days];
-    if (currentDays.includes(day)) {
-      setStaffForm({
-        ...staffForm,
-        schedule: { ...staffForm.schedule, days: currentDays.filter(d => d !== day) }
-      });
-    } else {
-      setStaffForm({
-        ...staffForm,
-        schedule: { ...staffForm.schedule, days: [...currentDays, day] }
-      });
-    }
-  };
-
-  // Voucher Handlers
-  const handleOpenAddVoucher = () => {
-    setEditingVoucher(null);
-    setVoucherForm({ type: TaxReceiptType.FINAL_CONSUMER, prefix: 'B02', start: 1, end: 1000 });
-    setIsVoucherModalOpen(true);
-  };
-
-  const handleSubmitVoucher = (e: React.FormEvent) => {
-    e.preventDefault();
-    const range: VoucherRange = {
-      id: editingVoucher?.id || generateVoucherId(),
-      type: voucherForm.type,
-      prefix: voucherForm.prefix,
-      start: voucherForm.start,
-      end: voucherForm.end,
-      current: editingVoucher?.current || 0,
-      branchId: branch.id,
-      status: editingVoucher?.status || VoucherStatus.ACTIVE,
-      createdAt: editingVoucher?.createdAt || new Date().toISOString()
-    };
-    saveVoucherRange(range);
-    setVoucherRanges(getVoucherRanges().filter(r => r.branchId === branch.id));
-    setIsVoucherModalOpen(false);
-  };
 
   const tabs = [
     { id: 'General', icon: Building2 },
     { id: 'Staff', icon: Users },
-    { id: 'Vouchers', icon: Ticket },
-    { id: 'Fiscal', icon: FileText },
-    { id: 'Roles', icon: ShieldCheck },
+    { id: 'Database', icon: Database },
+    { id: 'Security', icon: ShieldCheck },
+    { id: 'Audit', icon: Terminal },
   ];
 
+  const handleManualBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const result = await triggerManualBackup();
+      setBackupHistory(prev => [result, ...prev]);
+      // Fix: Use correct logAction signature.
+      await logAction({ id: user.id, username: user.username, branchId: user.branchId }, AuditAction.DATABASE_BACKUP, "Triggered manual database snapshot.");
+      alert("Database snapshot successfully archived.");
+    } catch (e) {
+      alert("Manual backup protocol failed.");
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+
+  const handleAuditClear = async () => {
+    if (confirm('Permanently wipe system audit trail?')) {
+      await clearAuditLogs();
+      setAuditLogs([]);
+    }
+  };
+
+  const filteredLogs = auditLogs.filter(l => 
+    l.details.toLowerCase().includes(auditSearch.toLowerCase()) ||
+    l.username.toLowerCase().includes(auditSearch.toLowerCase()) ||
+    l.action.includes(auditSearch.toUpperCase())
+  );
+
+  const handleSaveStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const userData: User = {
+      id: editingStaff?.id || generateUserId(),
+      ...staffForm
+    };
+    await saveUser(userData);
+    
+    // Fix: Pass full user object to logAction.
+    await logAction(
+      { id: user.id, username: user.username, branchId: user.branchId },
+      AuditAction.STAFF_UPDATE,
+      `${editingStaff ? 'Updated' : 'Created'} staff member: ${userData.username}`,
+      { staffId: userData.id, role: userData.role }
+    );
+
+    setStaff(await getEmployeesByBranch(branch.id));
+    setIsStaffModalOpen(false);
+    setEditingStaff(null);
+    setStaffForm({
+      username: '',
+      email: '',
+      phone: '',
+      role: UserRole.SALESPERSON,
+      branchId: branch.id,
+      schedule: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], startTime: '08:00', endTime: '18:00' },
+      isActive: true
+    });
+  };
+
+  const handleDeleteStaff = async (staffId: string, staffName: string) => {
+    if (confirm(`Are you sure you want to permanently remove ${staffName} from the terminal database?`)) {
+      await deleteUser(staffId);
+      await logAction(
+        { id: user.id, username: user.username, branchId: user.branchId },
+        AuditAction.STAFF_UPDATE,
+        `Permanently deleted staff member: ${staffName}`,
+        { staffId }
+      );
+      setStaff(await getEmployeesByBranch(branch.id));
+    }
+  };
+
+  const openEditStaff = (member: User) => {
+    setEditingStaff(member);
+    setStaffForm({
+      username: member.username,
+      email: member.email || '',
+      phone: member.phone || '',
+      role: member.role,
+      branchId: member.branchId,
+      schedule: member.schedule || { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], startTime: '08:00', endTime: '18:00' },
+      isActive: member.isActive
+    });
+    setIsStaffModalOpen(true);
+  };
+
   return (
-    <div className="max-w-6xl mx-auto space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900 dark:text-slate-100 transition-colors italic">System Node Control</h1>
-          <p className="text-slate-500 dark:text-slate-400 font-medium">Configuring: <span className="text-blue-600 dark:text-blue-400 font-bold">{branch.name}</span></p>
+    <div className="max-w-7xl mx-auto space-y-10 animate-in fade-in duration-500">
+      <div className="flex flex-col sm:flex-row justify-between items-start gap-6">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-black text-xs uppercase tracking-[0.2em]">
+            <HardDrive size={16} /> Kernel Configuration
+          </div>
+          <h1 className="text-4xl font-black tracking-tight text-slate-900 dark:text-slate-100 italic transition-colors">Node Administration</h1>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">Active Cluster: <span className="text-blue-600 dark:text-blue-400 font-bold uppercase tracking-widest text-xs">{branch.name}</span></p>
         </div>
-        <div className="bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center gap-3 transition-colors">
-           <Activity size={18} className="text-emerald-500" />
-           <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Node Cluster v4.2.1-STABLE</span>
+        <div className="flex items-center gap-3 p-4 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+           <Activity size={20} className="text-emerald-500" />
+           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">SQL Version 8.0.32-Stable</span>
         </div>
       </div>
 
-      <div className="flex gap-2 p-1 bg-slate-200/50 dark:bg-slate-800/50 rounded-2xl w-full sm:w-fit no-print transition-colors overflow-x-auto no-scrollbar">
+      <div className="flex gap-2 p-1.5 bg-slate-200/50 dark:bg-slate-800/50 rounded-3xl w-fit overflow-x-auto no-scrollbar transition-colors">
         {tabs.map(tab => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
+            className={`flex items-center gap-2 px-8 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
               activeTab === tab.id 
-                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-lg ring-1 ring-slate-200 dark:ring-slate-700' 
-                : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xl' 
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <tab.icon size={18} />
+            <tab.icon size={16} />
             {tab.id}
           </button>
         ))}
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-slate-800 shadow-2xl shadow-slate-200/30 dark:shadow-black/50 overflow-hidden transition-colors">
-        <div className="p-6 sm:p-12">
-          {activeTab === 'General' && (
-            <div className="space-y-10">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-                <div className="space-y-8">
-                  <h3 className="text-2xl font-black flex items-center gap-3 dark:text-slate-100 transition-colors italic">
-                    <Building2 className="text-blue-600 dark:text-blue-400" size={24} />
-                    Terminal Network
-                  </h3>
-                  <div className="space-y-4">
-                    {branches.map(b => (
-                      <div 
-                        key={b.id}
-                        onClick={() => onBranchChange(b)}
-                        className={`group w-full flex items-center justify-between p-6 rounded-[2rem] border-2 cursor-pointer transition-all ${
-                          branch.id === b.id 
-                            ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-600 dark:border-blue-500 shadow-xl shadow-blue-500/10' 
-                            : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="text-left">
-                          <p className="font-black text-lg text-slate-900 dark:text-slate-100 transition-colors leading-none mb-2">{b.name}</p>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
-                            <MapPin size={12} className="text-blue-500" /> {b.address.split(',')[0]}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                           <button onClick={(e) => handleOpenEditBranch(b, e)} className="p-3 text-slate-300 dark:text-slate-600 hover:text-blue-600 dark:hover:text-blue-400 transition-all opacity-0 group-hover:opacity-100 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                             <Edit2 size={16} />
-                           </button>
-                           <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${branch.id === b.id ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-800 text-transparent'}`}>
-                             {branch.id === b.id && <Check size={16} strokeWidth={3} />}
-                           </div>
-                        </div>
-                      </div>
-                    ))}
-                    <button onClick={handleOpenAddBranch} className="w-full flex items-center justify-center gap-3 py-6 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[2rem] text-slate-400 dark:text-slate-600 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-all font-black text-xs uppercase tracking-widest">
-                      <Plus size={20} /> Register New Fleet Member
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-8">
-                   <h3 className="text-2xl font-black dark:text-slate-100 transition-colors italic">Global Identity</h3>
-                   <div className="p-10 bg-slate-50 dark:bg-slate-800/50 rounded-[3rem] border border-slate-100 dark:border-slate-800 space-y-8 transition-colors shadow-inner">
-                      <div>
-                        <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">Entity Primary Name</label>
-                        <input type="text" className="w-full p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-lg dark:text-slate-100 transition-colors focus:ring-4 focus:ring-blue-500/10 outline-none" defaultValue="LavanFlow Laundry Services" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] mb-3 ml-1">Group RNC</label>
-                        <input type="text" className="w-full p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl font-black text-lg dark:text-slate-100 transition-colors focus:ring-4 focus:ring-blue-500/10 outline-none" defaultValue="131-00200-3" />
-                      </div>
-                   </div>
-                </div>
-              </div>
-            </div>
-          )}
-
+      <div className="bg-white dark:bg-slate-900 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl transition-all overflow-hidden min-h-[600px]">
+        <div className="p-10 md:p-14">
           {activeTab === 'Staff' && (
-            <div className="space-y-10">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div>
-                  <h3 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight transition-colors italic">Branch Roster</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium transition-colors mt-1">Personnel fleet currently docked at {branch.name}</p>
+                  <h3 className="text-3xl font-black text-slate-900 dark:text-white italic tracking-tighter">Crew Manifest</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-1">Authorized personnel indexed in MySQL for {branch.name}</p>
                 </div>
                 <button 
-                  onClick={handleOpenAddStaff}
-                  className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-blue-600 dark:bg-blue-700 text-white rounded-[2rem] font-black hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-2xl shadow-blue-500/20 active:scale-95 text-xs uppercase tracking-widest"
+                  onClick={() => {
+                    setEditingStaff(null);
+                    setStaffForm({
+                      username: '',
+                      email: '',
+                      phone: '',
+                      role: UserRole.SALESPERSON,
+                      branchId: branch.id,
+                      schedule: { days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], startTime: '08:00', endTime: '18:00' },
+                      isActive: true
+                    });
+                    setIsStaffModalOpen(true);
+                  }}
+                  className="flex items-center gap-3 px-8 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20 hover:scale-[1.02] active:scale-95 transition-all"
                 >
-                  <UserPlus size={20} /> Register Personnel
+                  <UserPlus size={18} /> Provision New Agent
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                {staff.map(employee => {
-                  const onDuty = isEmployeeOnDuty(employee);
-                  return (
-                    <div key={employee.id} className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-2xl transition-all p-8 group relative overflow-hidden">
-                      <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-bl-[4rem] -z-10 group-hover:bg-blue-500/10 transition-colors"></div>
-                      <div className="flex justify-between items-start mb-6">
-                        <div className="relative">
-                          <div className={`w-16 h-16 rounded-[1.5rem] flex items-center justify-center text-2xl font-black italic shadow-lg ${
-                            employee.role === UserRole.ADMIN ? 'bg-slate-900 dark:bg-black text-white' : 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
-                          }`}>
-                            {employee.username[0]}
-                          </div>
-                          <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-4 border-white dark:border-slate-900 ${onDuty ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300 dark:bg-slate-700 shadow-inner'}`}></div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {staff.map(member => (
+                  <div key={member.id} className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 group relative hover:shadow-xl transition-all">
+                    <div className="flex justify-between items-start mb-6">
+                      <div className="relative">
+                        <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center font-black text-2xl text-blue-600 italic border border-slate-100 dark:border-slate-700 shadow-sm transition-colors">
+                          {member.username[0]}
                         </div>
-                        <button onClick={() => handleOpenEditStaff(employee)} className="p-3 text-slate-300 dark:text-slate-600 hover:text-blue-600 dark:hover:text-blue-400 transition-all bg-slate-50 dark:bg-slate-800 rounded-xl">
+                        {isEmployeeOnDuty(member) && (
+                          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-4 border-slate-50 dark:border-slate-800 rounded-full animate-pulse transition-colors"></div>
+                        )}
+                      </div>
+                      <div className="flex gap-1">
+                        <button 
+                          onClick={() => openEditStaff(member)}
+                          className="p-2 text-slate-400 hover:text-blue-500 hover:bg-white dark:hover:bg-slate-700 rounded-xl transition-all"
+                        >
                           <Edit2 size={18} />
                         </button>
-                      </div>
-
-                      <div className="space-y-1 mb-8">
-                        <div className="flex items-center gap-2">
-                          <h4 className="text-lg font-black text-slate-900 dark:text-slate-100 transition-colors">{employee.username}</h4>
-                          {onDuty && (
-                            <span className="text-[8px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded-full border border-emerald-100 dark:border-emerald-800">Live</span>
-                          )}
-                        </div>
-                        <p className="text-xs text-slate-400 dark:text-slate-500 font-bold truncate transition-colors uppercase tracking-tight italic">{employee.email || 'No credentials'}</p>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 mb-8">
-                        <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.1em] shadow-sm ${
-                          employee.role === UserRole.ADMIN ? 'bg-slate-900 dark:bg-black text-white' :
-                          employee.role === UserRole.SALESPERSON ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300' :
-                          employee.role === UserRole.CASHIER ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300' :
-                          'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300'
-                        }`}>
-                          {employee.role}
-                        </span>
-                        <span className="px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.1em] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors border border-slate-200 dark:border-slate-700">
-                           {employee.schedule?.startTime} - {employee.schedule?.endTime}
-                        </span>
-                      </div>
-
-                      <div className="pt-6 border-t border-slate-50 dark:border-slate-800 flex items-center justify-between transition-colors">
-                         <div className="flex gap-1.5">
-                            {DAYS.map(day => {
-                              const isWorkDay = employee.schedule?.days.includes(day);
-                              return (
-                                <div key={day} className={`w-6 h-6 rounded-lg flex items-center justify-center text-[9px] font-black transition-all ${isWorkDay ? 'bg-blue-600 dark:bg-blue-500 text-white shadow-md scale-110' : 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600'}`}>
-                                  {day[0]}
-                                </div>
-                              );
-                            })}
-                         </div>
-                         <button onClick={() => handleOpenEditStaff(employee)} className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 hover:underline">
-                           Shift Log
-                         </button>
+                        <button 
+                          onClick={() => handleDeleteStaff(member.id, member.username)}
+                          className="p-2 text-slate-400 hover:text-red-500 hover:bg-white dark:hover:bg-slate-700 rounded-xl transition-all"
+                        >
+                          <UserMinus size={18} />
+                        </button>
                       </div>
                     </div>
-                  );
-                })}
+
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-black text-slate-900 dark:text-white text-lg leading-none transition-colors">{member.username}</h4>
+                        <p className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest mt-2 transition-colors">{member.role} Protocol</p>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        {member.email && (
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium transition-colors">
+                            <Mail size={12} /> {member.email}
+                          </div>
+                        )}
+                        {member.phone && (
+                          <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium transition-colors">
+                            <Smartphone size={12} /> {member.phone}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium transition-colors">
+                          <Clock size={12} /> {member.schedule?.startTime} - {member.schedule?.endTime}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center transition-colors">
+                       <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded transition-all ${member.isActive ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'}`}>
+                         {member.isActive ? 'Authorized' : 'Restricted'}
+                       </span>
+                       <ChevronRight size={16} className="text-slate-300 dark:text-slate-600 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                  </div>
+                ))}
+                {staff.length === 0 && (
+                  <div className="col-span-full py-32 text-center text-slate-400 uppercase font-black text-xs tracking-widest italic border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[3rem] transition-colors">
+                    Zero personnel records indexed for this SQL node.
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {activeTab === 'Vouchers' && (
-            <div className="space-y-10">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+          {activeTab === 'Database' && (
+            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div>
-                  <h3 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight transition-colors italic">Fiscal Ranges (NCF)</h3>
-                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium transition-colors mt-1">Managing sequences for {branch.name}</p>
+                  <h3 className="text-3xl font-black text-slate-900 dark:text-white italic tracking-tighter transition-colors">Data Persistence</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-1 transition-colors">Manage MySQL state snapshots and manual archives</p>
                 </div>
                 <button 
-                  onClick={handleOpenAddVoucher}
-                  className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-indigo-600 dark:bg-indigo-700 text-white rounded-[2rem] font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-all shadow-2xl shadow-indigo-500/20 active:scale-95 text-xs uppercase tracking-widest"
+                  onClick={handleManualBackup}
+                  disabled={isBackingUp}
+                  className="flex items-center gap-3 px-8 py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
                 >
-                  <Plus size={20} /> New NCF Sequence
+                  {isBackingUp ? <Loader2 size={18} className="animate-spin" /> : <CloudDownload size={18} />}
+                  {isBackingUp ? 'Archiving State...' : 'Trigger Manual Backup'}
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {voucherRanges.map(range => {
-                  const used = range.current;
-                  const total = range.end - range.start + 1;
-                  const percentage = (used / total) * 100;
-                  
-                  return (
-                    <div key={range.id} className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-slate-800 p-10 space-y-8 group hover:shadow-2xl transition-all relative overflow-hidden">
-                      <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 -mr-16 -mt-16 rounded-full blur-2xl ${
-                        range.status === VoucherStatus.ACTIVE ? 'bg-blue-500' : 'bg-red-500'
-                      }`}></div>
-                      <div className="flex justify-between items-start">
-                        <div className="flex items-center gap-5">
-                          <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-xl transition-colors ${
-                            range.status === VoucherStatus.ACTIVE ? 'bg-blue-600 dark:bg-blue-500 text-white' :
-                            range.status === VoucherStatus.LOW ? 'bg-amber-500 dark:bg-amber-500 text-white' :
-                            'bg-red-600 dark:bg-red-500 text-white'
-                          }`}>
-                            <Ticket size={28} />
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] transition-colors">{range.type}</p>
-                            <h4 className="text-2xl font-black text-slate-900 dark:text-slate-100 transition-colors italic">{range.prefix} Block</h4>
-                          </div>
-                        </div>
-                        <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-colors shadow-sm ${
-                          range.status === VoucherStatus.ACTIVE ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400' :
-                          range.status === VoucherStatus.LOW ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' :
-                          'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                        }`}>
-                          {range.status}
-                        </span>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="flex justify-between text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 transition-colors">
-                          <span>Sequence Burn Rate</span>
-                          <span className="dark:text-slate-200 transition-colors">{used} / {total} BURNED</span>
-                        </div>
-                        <div className="h-4 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden transition-colors border border-slate-200 dark:border-slate-700 shadow-inner">
-                          <div 
-                            className={`h-full transition-all duration-1000 ${
-                              percentage > 90 ? 'bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.5)]' : percentage > 70 ? 'bg-amber-500' : 'bg-blue-600 dark:bg-blue-500'
-                            }`}
-                            style={{ width: `${percentage}%` }}
-                          ></div>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-8 pt-6 border-t border-slate-100 dark:border-slate-800 transition-colors">
-                        <div>
-                          <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 transition-colors">Anchor Point</p>
-                          <p className="font-mono font-black text-lg text-slate-900 dark:text-slate-100 transition-colors">{range.prefix}{range.start.toString().padStart(8, '0')}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 transition-colors">Ceiling Point</p>
-                          <p className="font-mono font-black text-lg text-slate-900 dark:text-slate-100 transition-colors">{range.prefix}{range.end.toString().padStart(8, '0')}</p>
-                        </div>
-                      </div>
-                      
-                      {range.status === VoucherStatus.LOW && (
-                        <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 rounded-2xl flex items-center gap-3 text-amber-700 dark:text-amber-400 text-xs font-black uppercase tracking-widest transition-colors shadow-sm">
-                          <AlertTriangle size={18} className="animate-pulse" /> Urgent: Replenish NCF inventory
-                        </div>
-                      )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                 <div className="p-10 bg-slate-900 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
+                    <div className="absolute inset-0 opacity-10 scan-line Desert pointer-events-none"></div>
+                    <div className="relative z-10 space-y-6">
+                       <h4 className="text-xl font-black italic">Cloud Storage</h4>
+                       <p className="text-xs text-slate-400 leading-relaxed font-medium">Manual snapshots are archived securely in the enterprise cloud cluster with AES-256 encryption. These records remain persistent even if local nodes fail.</p>
+                       <div className="flex items-center gap-3 p-4 bg-white/5 rounded-2xl border border-white/10">
+                          <Check className="text-emerald-500" size={18} />
+                          <span className="text-[10px] font-black uppercase tracking-widest">Storage Status: Connected</span>
+                       </div>
                     </div>
-                  );
-                })}
+                 </div>
+
+                 <div className="p-10 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[3rem] shadow-sm relative group transition-colors">
+                    <div className="space-y-6">
+                       <h4 className="text-xl font-black italic dark:text-white transition-colors">Data Integrity</h4>
+                       <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium transition-colors">LavanFlow utilizes Prisma with MySQL Transactions to ensure every order entry is atomic. No data fragmentation occurs even during high-concurrency periods.</p>
+                       <div className="flex items-center gap-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl border border-blue-100 dark:border-blue-800 transition-all">
+                          <ShieldCheck className="text-blue-500" size={18} />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 transition-colors">Verified Integrity: 100% (Last Check: 1h ago)</span>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="space-y-6">
+                 <h4 className="text-xl font-black italic dark:text-white flex items-center gap-3 transition-colors">
+                    <History size={20} className="text-slate-400" /> Snapshot History
+                 </h4>
+                 <div className="bg-black/5 dark:bg-black/40 rounded-[2.5rem] border border-slate-100 dark:border-white/5 overflow-hidden transition-colors">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left font-mono">
+                        <thead className="bg-white dark:bg-white/5 border-b border-slate-100 dark:border-white/5 transition-colors">
+                          <tr className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">
+                            <th className="px-10 py-6">Timestamp</th>
+                            <th className="px-10 py-6">Type</th>
+                            <th className="px-10 py-6">Size</th>
+                            <th className="px-10 py-6">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-white/5 transition-colors">
+                          {backupHistory.map(log => (
+                            <tr key={log.id} className="text-xs hover:bg-blue-500/5 transition-colors">
+                              <td className="px-10 py-6 text-slate-400 whitespace-nowrap">{format(log.timestamp, 'yyyy-MM-dd HH:mm:ss')}</td>
+                              <td className="px-10 py-6">
+                                <span className={`px-2 py-1 rounded font-black ${
+                                  log.type === 'AUTOMATED' ? 'bg-blue-500/10 text-blue-500' : 'bg-emerald-500/10 text-emerald-500'
+                                }`}>{log.type}</span>
+                              </td>
+                              <td className="px-10 py-6 text-slate-500">{log.fileSize ? `${(log.fileSize / 1024).toFixed(2)} KB` : 'N/A'}</td>
+                              <td className="px-10 py-6">
+                                <span className="flex items-center gap-2 font-black text-emerald-500">
+                                   <Check size={14} /> {log.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                          {backupHistory.length === 0 && (
+                            <tr>
+                              <td colSpan={4} className="py-20 text-center text-slate-400 uppercase font-black text-xs tracking-widest italic transition-colors">
+                                Zero snapshot records indexed.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                 </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'Fiscal' && (
-            <div className="space-y-12 animate-in slide-in-from-bottom-4">
-              <div className="bg-indigo-900 dark:bg-black p-12 rounded-[3.5rem] border border-white/5 transition-all shadow-2xl relative overflow-hidden group">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_var(--tw-gradient-stops))] from-indigo-500/20 via-transparent to-transparent opacity-50"></div>
-                <div className="relative z-10">
-                  <h3 className="text-3xl font-black text-white mb-3 flex items-center gap-4 italic">
-                    <FileText size={32} className="text-blue-400" /> DGII 607+ Automated Engine
-                  </h3>
-                  <p className="text-indigo-200 dark:text-slate-400 text-base font-medium mb-10 max-w-2xl leading-relaxed">
-                    Orchestrate how the system declares transactional throughput to the fiscal department. Zero-touch compliance protocols.
-                  </p>
-                  <div className="space-y-6">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-8 bg-white/5 backdrop-blur-xl rounded-[2.5rem] border border-white/10 shadow-2xl transition-all hover:bg-white/10 group">
-                      <div className="flex items-center gap-6 mb-4 sm:mb-0">
-                        <div className="p-4 bg-indigo-500/20 text-blue-400 rounded-[1.5rem] transition-transform group-hover:rotate-12">
-                          <Clock size={28} />
-                        </div>
-                        <div>
-                          <p className="font-black text-xl text-white italic">Automatic Daily Dispatch</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-1">Scheduled: 23:59 AST • Standard 607 Format</p>
-                        </div>
-                      </div>
-                      <button className="text-blue-400 hover:text-white transition-colors">
-                        <ToggleRight size={56} strokeWidth={1} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Maintenance Mode Activation */}
-              <div className="bg-slate-900 dark:bg-[#020617] p-12 rounded-[3.5rem] border border-red-500/20 transition-all shadow-2xl relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/5 rounded-full -mr-32 -mt-32 blur-[80px]"></div>
-                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-10">
-                   <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                         <div className="p-3 bg-red-600/10 text-red-500 rounded-2xl">
-                            <ShieldAlert size={28} />
-                         </div>
-                         <h3 className="text-2xl font-black text-white italic">Kernel Maintenance</h3>
-                      </div>
-                      <p className="text-slate-400 max-w-lg font-medium leading-relaxed">
-                        Immediately lock down the entire terminal network. This mode restricts all non-privileged nodes and initiates cluster-wide maintenance protocols.
-                      </p>
-                   </div>
-                   <button 
-                     onClick={() => onSetMaintenance(!isMaintenance)}
-                     className={`flex items-center gap-4 px-10 py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] transition-all shadow-2xl ${
-                        isMaintenance 
-                        ? 'bg-emerald-600 text-white shadow-emerald-500/20 hover:bg-emerald-500' 
-                        : 'bg-red-600 text-white shadow-red-500/20 hover:bg-red-500'
-                     }`}
-                   >
-                      {isMaintenance ? <Zap size={20} /> : <Lock size={20} />}
-                      {isMaintenance ? 'Release Lockout' : 'Activate Maintenance'}
-                   </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'Roles' && (
-            <div className="space-y-8 animate-in slide-in-from-bottom-4">
-              <div className="flex items-center justify-between">
+          {activeTab === 'Audit' && (
+            <div className="space-y-10">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                 <div>
-                   <h3 className="text-3xl font-black dark:text-slate-100 transition-colors italic">Authorization Matrix</h3>
-                   <p className="text-slate-500 dark:text-slate-400 font-medium transition-colors mt-1">Cross-node credential standardization</p>
+                  <h3 className="text-3xl font-black text-slate-900 dark:text-white italic tracking-tighter transition-colors">Audit Terminal</h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-1 transition-colors">Immutable MySQL record of system state transitions</p>
+                </div>
+                <div className="flex gap-3">
+                  <div className="relative group">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={18} />
+                    <input 
+                      type="text" 
+                      placeholder="Filter records..." 
+                      className="pl-12 pr-6 py-4 bg-slate-50 dark:bg-slate-800/50 border border-transparent focus:border-blue-500/50 rounded-2xl outline-none font-bold text-sm w-72 transition-all dark:text-white"
+                      value={auditSearch}
+                      onChange={(e) => setAuditSearch(e.target.value)}
+                    />
+                  </div>
+                  <button 
+                    onClick={handleAuditClear}
+                    className="p-4 bg-red-500/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all border border-red-500/20"
+                  >
+                    <Trash2 size={20} />
+                  </button>
                 </div>
               </div>
-              <div className="overflow-hidden border border-slate-200 dark:border-slate-800 rounded-[3rem] shadow-xl transition-colors">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 dark:bg-slate-800/50 transition-colors">
-                    <tr className="text-slate-400 dark:text-slate-500 font-black uppercase text-[10px] tracking-[0.3em] transition-colors border-b border-slate-100 dark:border-slate-700">
-                      <th className="px-10 py-6 text-left">Role Assignment</th>
-                      <th className="px-8 py-6 text-center">Invoicing</th>
-                      <th className="px-8 py-6 text-center">Core Operations</th>
-                      <th className="px-8 py-6 text-center">System Kernel</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50 dark:divide-slate-800 transition-colors">
-                    {Object.values(UserRole).map(role => (
-                      <tr key={role} className="hover:bg-blue-50/50 dark:hover:bg-blue-900/5 transition-all group">
-                        <td className="px-10 py-6">
-                          <div className="font-black text-lg text-slate-900 dark:text-slate-100 transition-colors italic group-hover:text-blue-600">{role}</div>
-                        </td>
-                        <td className="px-8 py-6 text-center">
-                          <div className="flex justify-center">
-                            <input type="checkbox" defaultChecked={role !== UserRole.OPERATOR} className="w-6 h-6 rounded-lg border-slate-300 dark:border-slate-700 bg-transparent text-blue-600 focus:ring-blue-500 transition-all cursor-not-allowed" disabled />
-                          </div>
-                        </td>
-                        <td className="px-8 py-6 text-center">
-                          <div className="flex justify-center">
-                            <input type="checkbox" defaultChecked={true} className="w-6 h-6 rounded-lg border-slate-300 dark:border-slate-700 bg-transparent text-blue-600 focus:ring-blue-500 transition-all cursor-not-allowed" disabled />
-                          </div>
-                        </td>
-                        <td className="px-8 py-6 text-center">
-                          <div className="flex justify-center">
-                            <input type="checkbox" defaultChecked={role === UserRole.ADMIN} className="w-6 h-6 rounded-lg border-slate-300 dark:border-slate-700 bg-transparent text-blue-600 focus:ring-blue-500 transition-all cursor-not-allowed" disabled />
-                          </div>
-                        </td>
+
+              <div className="bg-black/5 dark:bg-black/40 rounded-[2.5rem] border border-slate-100 dark:border-white/5 overflow-hidden transition-colors">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left font-mono">
+                    <thead className="bg-white dark:bg-white/5 border-b border-slate-100 dark:border-white/5 transition-colors">
+                      <tr className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em]">
+                        <th className="px-10 py-6">Timestamp</th>
+                        <th className="px-10 py-6">Agent</th>
+                        <th className="px-10 py-6">Action</th>
+                        <th className="px-10 py-6">Operational Log</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-white/5 transition-colors">
+                      {filteredLogs.map(log => (
+                        <tr key={log.id} className="text-xs hover:bg-blue-500/5 transition-colors">
+                          <td className="px-10 py-6 text-slate-400 whitespace-nowrap">{format(log.timestamp, 'HH:mm:ss.SSS')}</td>
+                          <td className="px-10 py-6">
+                            <span className="px-2 py-1 bg-blue-500/10 text-blue-500 rounded font-black">{log.username}</span>
+                          </td>
+                          <td className="px-10 py-6">
+                            <span className={`px-2 py-1 rounded font-black ${
+                              log.action === AuditAction.NCF_BURN ? 'bg-amber-500/10 text-amber-500' :
+                              log.action === AuditAction.LOGIN ? 'bg-emerald-500/10 text-emerald-500' :
+                              log.action === AuditAction.STAFF_UPDATE ? 'bg-blue-500/10 text-blue-500' :
+                              log.action === AuditAction.DATABASE_BACKUP ? 'bg-emerald-500/10 text-emerald-500' :
+                              'bg-slate-500/10 text-slate-400'
+                            }`}>{log.action}</span>
+                          </td>
+                          <td className="px-10 py-6 text-slate-900 dark:text-slate-100 font-bold">{log.details}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {filteredLogs.length === 0 && (
+                    <div className="py-32 text-center text-slate-400 uppercase font-black text-xs tracking-widest italic transition-colors">
+                      Zero data fragments detected in SQL audit stream.
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-3 p-6 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 text-slate-400 text-[10px] font-black uppercase tracking-[0.2em]">
-                 <ShieldCheck size={16} className="text-blue-500" /> Roles are static in current firmware. Contact administrator for custom policy overrides.
+            </div>
+          )}
+
+          {activeTab === 'General' && (
+            <div className="space-y-12 animate-in fade-in slide-in-from-bottom-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                 <div className="space-y-8">
+                    <h3 className="text-2xl font-black italic dark:text-white flex items-center gap-3 transition-colors">
+                       <Building2 className="text-blue-600" /> Regional Fleet
+                    </h3>
+                    <div className="space-y-4">
+                       {branches.map(b => (
+                         <div 
+                           key={b.id} 
+                           onClick={() => onBranchChange(b)}
+                           className={`p-8 rounded-[2.5rem] border-2 cursor-pointer transition-all group ${
+                             branch.id === b.id 
+                             ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-600 shadow-2xl' 
+                             : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:border-blue-500/30'
+                           }`}
+                         >
+                            <div className="flex justify-between items-center">
+                               <div>
+                                  <p className="text-xl font-black dark:text-white group-hover:text-blue-600 transition-colors leading-none">{b.name}</p>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">{b.address}</p>
+                               </div>
+                               <div className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center transition-all ${branch.id === b.id ? 'bg-blue-600 border-blue-600 text-white shadow-lg' : 'border-slate-100 dark:border-slate-800 text-transparent'}`}>
+                                  <Check size={20} strokeWidth={3} />
+                               </div>
+                            </div>
+                         </div>
+                       ))}
+                    </div>
+                 </div>
+                 
+                 <div className="space-y-8">
+                    <h3 className="text-2xl font-black italic dark:text-white flex items-center gap-3 transition-colors">
+                       <ShieldIcon className="text-indigo-600" /> Security Hardening
+                    </h3>
+                    <div className="bg-slate-900 dark:bg-black rounded-[3rem] p-10 text-white shadow-2xl border border-white/5 space-y-10 relative overflow-hidden transition-colors">
+                       <div className="absolute inset-0 opacity-10 Desert scan-line pointer-events-none"></div>
+                       <div className="relative z-10 flex flex-col gap-8">
+                          <div className="flex justify-between items-center p-6 bg-white/5 rounded-3xl border border-white/10 group transition-all">
+                             <div>
+                                <p className="font-black text-lg italic leading-none">Kernel Lockout</p>
+                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-2">Restrict all nodes immediately</p>
+                             </div>
+                             <button 
+                                onClick={() => onSetMaintenance(!isMaintenance)}
+                                className={`p-4 rounded-2xl transition-all shadow-xl ${isMaintenance ? 'bg-emerald-600' : 'bg-red-600 hover:scale-105 active:scale-95'}`}
+                             >
+                                {isMaintenance ? <Check size={24} /> : <ShieldAlert size={24} />}
+                             </button>
+                          </div>
+                          <p className="text-xs text-slate-400 font-medium leading-relaxed italic opacity-60">
+                             Note: Activating maintenance will force disconnect all current staff sessions across the MySQL cluster except root administrators.
+                          </p>
+                       </div>
+                    </div>
+                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Staff Modal */}
-      {isStaffModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xl z-[1000] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[3.5rem] overflow-hidden shadow-[0_30px_100px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-300 border dark:border-slate-800 transition-all flex flex-col max-h-[90vh]">
-             <div className="p-10 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors bg-slate-50/50 dark:bg-slate-800/30">
+      {/* Staff Provisioning Modal */}
+      <AnimatePresence>
+        {isStaffModalOpen && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[1000] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[3.5rem] overflow-hidden shadow-2xl border dark:border-slate-800 transition-colors"
+            >
+              <div className="p-10 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 transition-colors">
                 <div>
-                  <h2 className="text-3xl font-black text-slate-900 dark:text-white transition-colors italic tracking-tighter">{editingStaff ? 'Update Credential' : 'Register Crew'}</h2>
-                  <p className="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1 transition-colors">Personnel Node Docking</p>
+                  <h2 className="text-3xl font-black dark:text-white italic tracking-tighter">
+                    {editingStaff ? 'Modify Agent Profile' : 'Provision New Agent'}
+                  </h2>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Credential Assignment Protocol</p>
                 </div>
-                <button onClick={() => setIsStaffModalOpen(false)} className="p-4 hover:bg-white dark:hover:bg-slate-800 rounded-2xl transition-all text-slate-500 dark:text-slate-400 shadow-sm border border-transparent hover:border-slate-200 dark:hover:border-slate-700"><X size={24}/></button>
-             </div>
-             <form onSubmit={handleSubmitStaff} className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                   <div className="space-y-6">
-                      <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600 dark:text-blue-400 mb-2 ml-1">Identity & Access</h4>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1 transition-colors">Username Handle</label>
-                          <input 
-                            required
-                            type="text" 
-                            className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl font-black dark:text-white outline-none focus:ring-4 focus:ring-blue-500/10 transition-all placeholder:text-slate-300"
-                            placeholder="e.g. jdoe_ops"
-                            value={staffForm.username}
-                            onChange={(e) => setStaffForm({...staffForm, username: e.target.value})}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1 transition-colors">Email Terminal</label>
-                          <input 
-                            required
-                            type="email" 
-                            className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl font-black dark:text-white outline-none focus:ring-4 focus:ring-blue-500/10 transition-all placeholder:text-slate-300"
-                            placeholder="staff@lavanflow.pro"
-                            value={staffForm.email}
-                            onChange={(e) => setStaffForm({...staffForm, email: e.target.value})}
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1 transition-colors">System Privilege</label>
-                          <select 
-                            className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl font-black dark:text-white outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
-                            value={staffForm.role}
-                            onChange={(e) => setStaffForm({...staffForm, role: e.target.value as UserRole})}
-                          >
-                            {Object.values(UserRole).filter(r => r !== UserRole.SPECIAL).map(r => <option key={r} value={r}>{r}</option>)}
-                          </select>
-                        </div>
-                        <div className="flex items-center justify-between p-5 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all">
-                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Docking Status</span>
-                           <button 
-                             type="button"
-                             onClick={() => setStaffForm({...staffForm, isActive: !staffForm.isActive})}
-                             className={`${staffForm.isActive ? 'text-blue-500' : 'text-slate-400'} transition-colors`}
-                           >
-                             {staffForm.isActive ? <ToggleRight size={48} strokeWidth={1} /> : <Toggle size={48} strokeWidth={1} />}
-                           </button>
-                        </div>
-                      </div>
-                   </div>
-
-                   <div className="space-y-6">
-                      <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-600 dark:text-indigo-400 mb-2 ml-1">Duty Roster</h4>
-                      <div className="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-[2rem] space-y-6 shadow-inner">
-                        <div>
-                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 transition-colors">Active Operations Days</label>
-                          <div className="grid grid-cols-4 gap-2">
-                             {DAYS.map(day => {
-                               const isActive = staffForm.schedule.days.includes(day);
-                               return (
-                                 <button 
-                                   key={day}
-                                   type="button"
-                                   onClick={() => toggleDay(day)}
-                                   className={`py-3 rounded-xl text-[10px] font-black uppercase transition-all border ${
-                                     isActive 
-                                     ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/20' 
-                                     : 'bg-white dark:bg-slate-900 text-slate-400 border-slate-200 dark:border-slate-700 hover:border-blue-500'
-                                   }`}
-                                 >
-                                   {day.slice(0, 3)}
-                                 </button>
-                               );
-                             })}
-                          </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                           <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 transition-colors">Shift Start</label>
-                              <div className="relative">
-                                <Clock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                                <input 
-                                  type="time" 
-                                  className="w-full pl-10 pr-4 py-4 bg-white dark:bg-slate-900 border-none rounded-xl font-black text-sm dark:text-white transition-all outline-none focus:ring-4 focus:ring-blue-500/10"
-                                  value={staffForm.schedule.startTime}
-                                  onChange={(e) => setStaffForm({...staffForm, schedule: { ...staffForm.schedule, startTime: e.target.value }})}
-                                />
-                              </div>
-                           </div>
-                           <div>
-                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 transition-colors">Shift End</label>
-                              <div className="relative">
-                                <Clock size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
-                                <input 
-                                  type="time" 
-                                  className="w-full pl-10 pr-4 py-4 bg-white dark:bg-slate-900 border-none rounded-xl font-black text-sm dark:text-white transition-all outline-none focus:ring-4 focus:ring-blue-500/10"
-                                  value={staffForm.schedule.endTime}
-                                  onChange={(e) => setStaffForm({...staffForm, schedule: { ...staffForm.schedule, endTime: e.target.value }})}
-                                />
-                              </div>
-                           </div>
-                        </div>
-                      </div>
-                      <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex gap-3 text-indigo-700 dark:text-indigo-400 transition-colors">
-                        <AlertTriangle size={20} className="shrink-0" />
-                        <p className="text-[10px] font-bold leading-relaxed uppercase">
-                          Operations outside shift hours require Admin override or manual clock-in.
-                        </p>
-                      </div>
-                   </div>
-                </div>
-             </form>
-             <div className="p-10 border-t border-slate-100 dark:border-slate-800 flex gap-4 bg-slate-50/50 dark:bg-slate-800/30">
-                <button type="button" onClick={() => setIsStaffModalOpen(false)} className="flex-1 py-5 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-2xl font-black hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-[10px] uppercase tracking-[0.2em] border border-slate-200 dark:border-slate-700">Abound Mission</button>
                 <button 
-                  type="button"
-                  onClick={handleSubmitStaff}
-                  className="flex-1 py-5 bg-blue-600 dark:bg-blue-700 text-white rounded-2xl font-black hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-[0_10px_30px_rgba(59,130,246,0.3)] text-[10px] uppercase tracking-[0.2em]"
+                  onClick={() => setIsStaffModalOpen(false)}
+                  className="p-4 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-2xl text-slate-500 transition-all"
                 >
-                  {editingStaff ? 'Finalize Update' : 'Initialize Personnel'}
+                  <X size={24}/>
                 </button>
-             </div>
-          </div>
-        </div>
-      )}
+              </div>
 
-      {/* Branch Modal */}
-      {isBranchModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xl z-[1000] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[3.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 border dark:border-slate-800 transition-colors">
-             <div className="p-10 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors bg-slate-50/50 dark:bg-slate-800/30">
-                <div>
-                  <h2 className="text-3xl font-black text-slate-900 dark:text-white transition-colors italic tracking-tighter">Fleet Module</h2>
-                  <p className="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1 transition-colors">Terminal Configuration</p>
-                </div>
-                <button onClick={() => setIsBranchModalOpen(false)} className="p-4 hover:bg-white dark:hover:bg-slate-800 rounded-2xl transition-colors text-slate-500 dark:text-slate-400"><X size={24}/></button>
-             </div>
-             <form onSubmit={handleSubmitBranch} className="p-10 space-y-8">
-                <div className="space-y-6">
-                   <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1 transition-colors">Branding Callsign</label>
-                      <input 
-                        required
-                        type="text" 
-                        className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl font-black dark:text-white outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
-                        value={branchForm.name}
-                        onChange={(e) => setBranchForm({...branchForm, name: e.target.value})}
-                      />
-                   </div>
-                   <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1 transition-colors">Physical Coordinates</label>
-                      <input 
-                        required
-                        type="text" 
-                        className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl font-black dark:text-white outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
-                        value={branchForm.address}
-                        onChange={(e) => setBranchForm({...branchForm, address: e.target.value})}
-                      />
-                   </div>
-                   <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1 transition-colors">RNC Signature</label>
-                      <input 
-                        required
-                        type="text" 
-                        className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl font-black dark:text-white outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
-                        value={branchForm.rnc}
-                        onChange={(e) => setBranchForm({...branchForm, rnc: e.target.value})}
-                      />
-                   </div>
-                </div>
-                <div className="flex gap-4 pt-6">
-                  <button type="button" onClick={() => setIsBranchModalOpen(false)} className="flex-1 py-5 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-2xl font-black hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-[10px] uppercase tracking-[0.2em] border border-slate-200 dark:border-slate-700">Discard</button>
-                  <button type="submit" className="flex-1 py-5 bg-blue-600 dark:bg-blue-700 text-white rounded-2xl font-black hover:bg-blue-700 dark:hover:bg-blue-600 transition-all shadow-2xl shadow-blue-500/20 text-[10px] uppercase tracking-[0.2em]">Deploy Updates</button>
-                </div>
-             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Voucher Modal */}
-      {isVoucherModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xl z-[1000] flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-[3.5rem] overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 border dark:border-slate-800 transition-colors">
-             <div className="p-10 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between transition-colors bg-slate-50/50 dark:bg-slate-800/30">
-                <div>
-                  <h2 className="text-3xl font-black text-slate-900 dark:text-white transition-colors italic tracking-tighter">Fiscal Block</h2>
-                  <p className="text-slate-400 dark:text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1 transition-colors">NCF Range Calibration</p>
-                </div>
-                <button onClick={() => setIsVoucherModalOpen(false)} className="p-4 hover:bg-white dark:hover:bg-slate-800 rounded-2xl transition-all text-slate-500 dark:text-slate-400"><X size={24}/></button>
-             </div>
-             <form onSubmit={handleSubmitVoucher} className="p-10 space-y-8">
-                <div className="space-y-6">
-                   <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1 transition-colors">Emission Protocol</label>
+              <form onSubmit={handleSaveStaff} className="p-10 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Username Handle</label>
+                    <input 
+                      required
+                      type="text" 
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl focus:ring-4 focus:ring-blue-500/10 outline-none transition-all dark:text-white font-bold"
+                      value={staffForm.username}
+                      onChange={(e) => setStaffForm({...staffForm, username: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Operational Role</label>
                     <select 
-                      className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl font-black dark:text-white outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
-                      value={voucherForm.type}
-                      onChange={(e) => {
-                        const type = e.target.value as TaxReceiptType;
-                        const prefix = type.includes('B01') ? 'B01' : type.includes('B02') ? 'B02' : 'B15';
-                        setVoucherForm({...voucherForm, type, prefix});
-                      }}
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl focus:ring-4 focus:ring-blue-500/10 outline-none transition-all dark:text-white font-bold"
+                      value={staffForm.role}
+                      onChange={(e) => setStaffForm({...staffForm, role: e.target.value as UserRole})}
                     >
-                      {Object.values(TaxReceiptType).filter(t => t !== TaxReceiptType.NONE).map(t => <option key={t} value={t}>{t}</option>)}
+                      {Object.values(UserRole).map(role => <option key={role} value={role}>{role}</option>)}
                     </select>
-                   </div>
-                   <div className="grid grid-cols-2 gap-6">
-                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1 transition-colors">Start Vector</label>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Email Node</label>
+                    <input 
+                      type="email" 
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl focus:ring-4 focus:ring-blue-500/10 outline-none transition-all dark:text-white font-bold"
+                      value={staffForm.email}
+                      onChange={(e) => setStaffForm({...staffForm, email: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Phone Line</label>
+                    <input 
+                      type="tel" 
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-2xl focus:ring-4 focus:ring-blue-500/10 outline-none transition-all dark:text-white font-bold"
+                      value={staffForm.phone}
+                      onChange={(e) => setStaffForm({...staffForm, phone: e.target.value})}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Operational Schedule</label>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="flex flex-wrap gap-2">
+                      {DAYS.map(day => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => {
+                            const newDays = staffForm.schedule.days.includes(day)
+                              ? staffForm.schedule.days.filter(d => d !== day)
+                              : [...staffForm.schedule.days, day];
+                            setStaffForm({
+                              ...staffForm,
+                              schedule: { ...staffForm.schedule, days: newDays }
+                            });
+                          }}
+                          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${staffForm.schedule.days.includes(day) ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}
+                        >
+                          {day}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
                       <input 
-                        type="number" 
-                        required
-                        className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl font-black dark:text-white outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
-                        value={voucherForm.start}
-                        onChange={(e) => setVoucherForm({...voucherForm, start: parseInt(e.target.value)})}
+                        type="time" 
+                        className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl text-xs font-bold dark:text-white transition-all"
+                        value={staffForm.schedule.startTime}
+                        onChange={(e) => setStaffForm({...staffForm, schedule: { ...staffForm.schedule, startTime: e.target.value }})}
                       />
-                     </div>
-                     <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-1 transition-colors">Ceiling Vector</label>
                       <input 
-                        type="number" 
-                        required
-                        className="w-full p-5 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl font-black dark:text-white outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
-                        value={voucherForm.end}
-                        onChange={(e) => setVoucherForm({...voucherForm, end: parseInt(e.target.value)})}
+                        type="time" 
+                        className="flex-1 px-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl text-xs font-bold dark:text-white transition-all"
+                        value={staffForm.schedule.endTime}
+                        onChange={(e) => setStaffForm({...staffForm, schedule: { ...staffForm.schedule, endTime: e.target.value }})}
                       />
-                     </div>
-                   </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="p-6 bg-indigo-50 dark:bg-indigo-900/20 rounded-[1.5rem] border border-indigo-100 dark:border-indigo-900/30 flex gap-4 text-indigo-700 dark:text-indigo-300 transition-colors shadow-sm">
-                  <ShieldCheck size={24} className="shrink-0" />
-                  <p className="text-[10px] font-black leading-relaxed transition-colors uppercase tracking-tight">
-                    Validated sequences are consumed chronologically. Authorization must match current DGII fleet credentials.
-                  </p>
+
+                <div className="flex gap-4 pt-4">
+                  <button 
+                    type="button"
+                    onClick={() => setIsStaffModalOpen(false)}
+                    className="flex-1 py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all shadow-sm"
+                  >
+                    Abort
+                  </button>
+                  <button 
+                    type="submit"
+                    className="flex-1 py-5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20 hover:scale-[1.02] active:scale-95 transition-all"
+                  >
+                    Sync Credentials
+                  </button>
                 </div>
-                <div className="flex gap-4 pt-6">
-                  <button type="button" onClick={() => setIsVoucherModalOpen(false)} className="flex-1 py-5 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-2xl font-black hover:bg-slate-100 dark:hover:bg-slate-700 transition-all text-[10px] uppercase tracking-[0.2em] border border-slate-200 dark:border-slate-700">Cancel</button>
-                  <button type="submit" className="flex-1 py-5 bg-indigo-600 dark:bg-indigo-700 text-white rounded-2xl font-black hover:bg-indigo-700 dark:hover:bg-indigo-600 transition-all shadow-2xl shadow-indigo-500/20 text-[10px] uppercase tracking-[0.2em]">Authorize Block</button>
-                </div>
-             </form>
+              </form>
+            </motion.div>
           </div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 };

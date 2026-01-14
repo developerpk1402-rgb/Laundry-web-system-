@@ -36,7 +36,12 @@ const Reports: React.FC<{ branch: Branch }> = ({ branch }) => {
   const [mailSent, setMailSent] = useState(false);
 
   useEffect(() => {
-    setOrders(getOrders().filter(o => o.branch === branch.name));
+    // Fix: Await getOrders() then filter results.
+    const fetchOrders = async () => {
+      const allOrders = await getOrders();
+      setOrders(allOrders.filter(o => o.branch === branch.name));
+    };
+    fetchOrders();
   }, [branch]);
 
   const fiscalOrders = orders.filter(o => o.taxReceiptType !== TaxReceiptType.NONE && o.ncf);

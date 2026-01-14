@@ -24,7 +24,12 @@ const Invoicing: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) =
 
   useEffect(() => {
     // Pipeline Rule: Only COMPLETED orders can transition to DELIVERED via Invoicing
-    setOrders(getOrders().filter(o => o.branch === branch.name && o.status === OrderStatus.COMPLETED));
+    // Fix: Await getOrders() then filter results.
+    const fetchOrders = async () => {
+      const allOrders = await getOrders();
+      setOrders(allOrders.filter(o => o.branch === branch.name && o.status === OrderStatus.COMPLETED));
+    };
+    fetchOrders();
   }, [branch]);
 
   const filteredOrders = orders.filter(o => 
@@ -37,11 +42,12 @@ const Invoicing: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) =
     setShowConfirm(true);
   };
 
-  const confirmInvoice = () => {
+  const confirmInvoice = async () => {
     if (!selectedOrder) return;
     
     // Call generateNCF with the current branch context
-    const ncf = generateNCF(selectedOrder.taxReceiptType, branch.id);
+    // Fix: Await generateNCF and pass the user object as the 3rd argument.
+    const ncf = await generateNCF(selectedOrder.taxReceiptType, branch.id, user);
     
     if (selectedOrder.taxReceiptType !== TaxReceiptType.NONE && !ncf) {
        alert("CRITICAL ERROR: No active NCF ranges found for this branch. Please check settings.");
@@ -57,8 +63,11 @@ const Invoicing: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) =
       remainingBalance: 0
     };
     
-    saveOrder(updated);
-    setOrders(getOrders().filter(o => o.branch === branch.name && o.status === OrderStatus.COMPLETED));
+    // Fix: Await saveOrder and pass user object.
+    await saveOrder(updated, user);
+    // Fix: Await getOrders then filter results.
+    const allOrders = await getOrders();
+    setOrders(allOrders.filter(o => o.branch === branch.name && o.status === OrderStatus.COMPLETED));
     setSelectedOrder(null);
     setShowConfirm(false);
     alert(`Handover Complete!\nNCF: ${ncf || 'Not Required (B00)'}`);

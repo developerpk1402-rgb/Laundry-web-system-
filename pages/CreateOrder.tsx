@@ -59,7 +59,14 @@ const CreateOrder: React.FC<{ branch: Branch, user: User }> = ({ branch, user })
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    setAvailableCustomers(getCustomers());
+    // Fix: Await getCustomers() call.
+    const fetchCustomers = async () => {
+      const customers = await getCustomers();
+      setAvailableCustomers(customers);
+    };
+    if (isCustomerSearchOpen) {
+      fetchCustomers();
+    }
   }, [isCustomerSearchOpen]);
 
   // Totals calculation
@@ -144,37 +151,42 @@ const CreateOrder: React.FC<{ branch: Branch, user: User }> = ({ branch, user })
     }
   };
 
-  const handleProcessOrder = () => {
+  const handleProcessOrder = async () => {
     if (!customer) return alert('Select a customer before processing');
     if (cart.length === 0) return alert('Order must have at least one item');
     setIsProcessing(true);
     
-    setTimeout(() => {
-      const order = {
-        id: Math.random().toString(36).substr(2, 9),
-        code: generateOrderCode(),
-        customerId: customer.id,
-        customerName: customer.name,
-        customerPhone: customer.phone,
-        status: OrderStatus.RECEIVED,
-        items: cart,
-        subtotal,
-        tax: taxAmount,
-        discount,
-        total: grandTotal,
-        amountPaid: 0,
-        remainingBalance: grandTotal,
-        datePlaced: new Date().toLocaleDateString(),
-        estimatedDelivery: new Date(Date.now() + 2 * 86400000).toLocaleDateString(),
-        processedBy: user.username,
-        branch: branch.name,
-        notes,
-        taxReceiptType: taxReceipt,
-        notified: false
-      };
-      saveOrder(order);
+    // Fix: Using async/await properly for saveOrder.
+    const order = {
+      code: generateOrderCode(),
+      customerId: customer.id,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      status: OrderStatus.RECEIVED,
+      items: cart,
+      subtotal,
+      tax: taxAmount,
+      discount,
+      total: grandTotal,
+      amountPaid: 0,
+      remainingBalance: grandTotal,
+      datePlaced: new Date().toLocaleDateString(),
+      estimatedDelivery: new Date(Date.now() + 2 * 86400000).toLocaleDateString(),
+      processedBy: user.username,
+      branch: branch.name,
+      notes,
+      taxReceiptType: taxReceipt,
+      notified: false
+    };
+    try {
+      // Fix: Pass 'user' as the second argument as required by orderService.saveOrder.
+      await saveOrder(order, user);
       navigate('/orders');
-    }, 1200);
+    } catch (error) {
+      alert("Error processing order.");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   return (

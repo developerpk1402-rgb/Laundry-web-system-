@@ -34,7 +34,10 @@ const Customers: React.FC = () => {
   });
 
   useEffect(() => {
-    setCustomers(getCustomers());
+    const fetchCustomers = async () => {
+      setCustomers(await getCustomers());
+    };
+    fetchCustomers();
   }, []);
 
   const filtered = customers.filter(c => 
@@ -44,7 +47,7 @@ const Customers: React.FC = () => {
     c.code.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleAddCustomer = (e: React.FormEvent) => {
+  const handleAddCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
     const customer: Customer = {
       id: Math.random().toString(36).substr(2, 9),
@@ -54,14 +57,15 @@ const Customers: React.FC = () => {
       rnc: newCustomer.rnc || undefined,
       address: newCustomer.address || undefined
     };
-    saveCustomer(customer);
-    setCustomers(getCustomers());
+    await saveCustomer(customer);
+    setCustomers(await getCustomers());
     setIsAddModalOpen(false);
     setNewCustomer({ name: '', phone: '', rnc: '', address: '' });
   };
 
-  const openHistory = (customer: Customer) => {
-    const allOrders = getOrders();
+  const openHistory = async (customer: Customer) => {
+    // Fix: Await getOrders() then filter results.
+    const allOrders = await getOrders();
     const filteredOrders = allOrders.filter(o => o.customerId === customer.id);
     setCustomerOrders(filteredOrders);
     setSelectedCustomerForHistory(customer);

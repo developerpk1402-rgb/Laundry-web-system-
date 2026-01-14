@@ -1,5 +1,5 @@
-
 import { Notification, NotificationType } from '../types';
+import { api } from '../lib/api-client';
 
 const STORAGE_KEY = 'lavanflow_notifications';
 
@@ -8,7 +8,7 @@ export const getNotifications = (): Notification[] => {
   return saved ? JSON.parse(saved) : [];
 };
 
-export const addNotification = (title: string, message: string, type: NotificationType, orderCode?: string) => {
+export const addNotification = async (title: string, message: string, type: NotificationType, orderCode?: string) => {
   const notifications = getNotifications();
   const newNotif: Notification = {
     id: Math.random().toString(36).substr(2, 9),
@@ -20,9 +20,17 @@ export const addNotification = (title: string, message: string, type: Notificati
     orderCode
   };
   notifications.unshift(newNotif);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications.slice(0, 50))); // Keep last 50
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(notifications.slice(0, 50))); 
   
-  // Custom event for real-time UI updates
+  // Enterprise sync: Save critical notifications to DB
+  if (type === 'system' || type === 'backup') {
+    try {
+      await api.post('/notifications', newNotif);
+    } catch (e) {
+      console.warn("Notification sync failed, stored locally.");
+    }
+  }
+
   window.dispatchEvent(new Event('notifications_updated'));
   return newNotif;
 };

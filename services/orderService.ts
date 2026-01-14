@@ -1,50 +1,64 @@
-
-import { Order, OrderStatus, TaxReceiptType } from '../types';
-import { getNextNCF } from './voucherService';
+import { Order, OrderStatus, TaxReceiptType, AuditAction, User } from '../types';
+import { getOrders as apiGetOrders, createOrder, updateOrderStatus, getOrderById } from '../lib/api/orders';
+import { burnNCF } from '../lib/api/vouchers';
 import { addNotification } from './notificationService';
+import { logAction } from './auditService';
 
-const STORAGE_KEY = 'laundry_orders_db';
-
-export const getOrders = (): Order[] => {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  return saved ? JSON.parse(saved) : [];
+export const getOrders = async (): Promise<Order[]> => {
+  return apiGetOrders();
 };
 
-export const saveOrder = (order: Order) => {
-  const orders = getOrders();
-  const index = orders.findIndex(o => o.id === order.id);
-  const isNew = index < 0;
+export const saveOrder = async (order: Partial<Order>, user: User) => {
+  const isNew = !order.id;
+  let savedOrder: Order;
 
-  if (!isNew) {
-    const oldOrder = orders[index];
-    if (oldOrder.status !== order.status) {
-      addNotification(
-        'Status Update',
-        `Order ${order.code} is now ${order.status}.`,
-        'status',
-        order.code
-      );
-    }
-    orders[index] = order;
-  } else {
-    orders.push(order);
+  if (isNew) {
+    savedOrder = await createOrder(order);
     addNotification(
       'New Sale Detected',
-      `${order.customerName} placed an order for RD$ ${order.total.toFixed(2)}.`,
+      `${savedOrder.customerName} placed an order for RD$ ${savedOrder.total.toFixed(2)}.`,
       'sale',
-      order.code
+      savedOrder.code
+    );
+
+    await logAction(
+      user,
+      AuditAction.ORDER_CREATE,
+      `Created new order ${savedOrder.code} for ${savedOrder.customerName}`,
+      { orderCode: savedOrder.code, customer: savedOrder.customerName, total: savedOrder.total }
+    );
+  } else {
+    // For status updates only in this simplified version
+    savedOrder = await updateOrderStatus(order.id!, order.status!);
+    
+    addNotification(
+      'Status Update',
+      `Order ${savedOrder.code} is now ${savedOrder.status}.`,
+      'status',
+      savedOrder.code
+    );
+    
+    await logAction(
+      user,
+      AuditAction.ORDER_STATUS_CHANGE,
+      `Changed order ${savedOrder.code} status to ${savedOrder.status}`,
+      { orderCode: savedOrder.code, newStatus: savedOrder.status }
     );
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+  
+  return savedOrder;
 };
 
-export const deleteOrder = (id: string) => {
-  const orders = getOrders().filter(o => o.id !== id);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
-};
-
-export const generateNCF = (type: TaxReceiptType, branchId: string): string => {
-  const ncf = getNextNCF(type, branchId);
+export const generateNCF = async (type: TaxReceiptType, branchId: string, user: User): Promise<string> => {
+  const ncf = await burnNCF(type, branchId);
+  if (ncf) {
+    await logAction(
+      user,
+      AuditAction.NCF_BURN,
+      `Burned NCF sequence ${ncf} for type ${type}`,
+      { ncf, type }
+    );
+  }
   return ncf || '';
 };
 

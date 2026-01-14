@@ -18,10 +18,11 @@ import {
   ChevronRight,
   ClipboardCheck
 } from 'lucide-react';
-import { Order, OrderStatus, Branch } from '../types';
+import { Order, OrderStatus, Branch, User } from '../types';
 import { getOrders, saveOrder } from '../services/orderService';
 
-const OrderStatusPage: React.FC<{ branch: Branch }> = ({ branch }) => {
+// Fix: Accept user in props to pass to saveOrder.
+const OrderStatusPage: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) => {
   const location = useLocation();
   const [activeTab, setActiveTab] = useState<OrderStatus>(location.state?.status || OrderStatus.RECEIVED);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -29,7 +30,12 @@ const OrderStatusPage: React.FC<{ branch: Branch }> = ({ branch }) => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   useEffect(() => {
-    setOrders(getOrders().filter(o => o.branch === branch.name));
+    // Fix: Await getOrders() and then filter.
+    const fetchOrders = async () => {
+      const allOrders = await getOrders();
+      setOrders(allOrders.filter(o => o.branch === branch.name));
+    };
+    fetchOrders();
   }, [branch]);
 
   const filteredOrders = orders.filter(o => {
@@ -41,15 +47,18 @@ const OrderStatusPage: React.FC<{ branch: Branch }> = ({ branch }) => {
     return matchesTab && matchesSearch;
   });
 
-  const handleUpdateStatus = (orderId: string, newStatus: OrderStatus) => {
+  const handleUpdateStatus = async (orderId: string, newStatus: OrderStatus) => {
     const order = orders.find(o => o.id === orderId);
     if (order) {
       const updated = { ...order, status: newStatus };
       if (newStatus === OrderStatus.COMPLETED) {
         updated.location = 'Shelf ' + String.fromCharCode(65 + Math.floor(Math.random() * 4)) + '-' + Math.floor(Math.random() * 50 + 1);
       }
-      saveOrder(updated);
-      const updatedList = getOrders().filter(o => o.branch === branch.name);
+      // Fix: Pass user as required.
+      await saveOrder(updated, user);
+      // Fix: Fetch updated orders asynchronously.
+      const allOrders = await getOrders();
+      const updatedList = allOrders.filter(o => o.branch === branch.name);
       setOrders(updatedList);
       
       const updatedSelected = updatedList.find(o => o.id === orderId);
@@ -57,12 +66,16 @@ const OrderStatusPage: React.FC<{ branch: Branch }> = ({ branch }) => {
     }
   };
 
-  const handleToggleNotified = (orderId: string) => {
+  const handleToggleNotified = async (orderId: string) => {
     const order = orders.find(o => o.id === orderId);
     if (order) {
       const updated = { ...order, notified: !order.notified };
-      saveOrder(updated);
-      setOrders(getOrders().filter(o => o.branch === branch.name));
+      // Fix: Pass user as required.
+      await saveOrder(updated, user);
+      // Fix: Fetch updated orders asynchronously.
+      const allOrders = await getOrders();
+      const updatedList = allOrders.filter(o => o.branch === branch.name);
+      setOrders(updatedList);
       if (selectedOrder?.id === orderId) setSelectedOrder(updated);
     }
   };
