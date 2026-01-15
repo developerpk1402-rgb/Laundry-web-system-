@@ -1,5 +1,6 @@
 
 import { User, UserRole } from '@/types';
+import { api } from '../api-client';
 
 export interface AuthTokens {
   accessToken: string;
@@ -7,30 +8,25 @@ export interface AuthTokens {
 }
 
 /**
- * Handles communication with the NestJS Auth Controller
+ * Handles communication with the LavanFlow Kernel (Mock or Real)
  */
 export const jwtService = {
   async login(credentials: any): Promise<{ user: User, tokens: AuthTokens }> {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/login`, {
-      method: 'POST',
-      body: JSON.stringify(credentials),
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-    if (!res.ok) throw new Error('Authentication failed');
-    return res.json();
+    const data = await api.post('/auth/login', credentials);
+    if (!data) throw new Error('Authentication failed');
+    return data;
   },
 
   async refresh(token: string): Promise<AuthTokens> {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    return res.json();
+    // Return mock refresh tokens
+    return {
+      accessToken: 'mock-access-refreshed-' + Date.now(),
+      refreshToken: 'mock-refresh-' + Date.now()
+    };
   },
 
   hasPermission(user: User, requiredRole: UserRole): boolean {
-    const hierarchy = {
+    const hierarchy: Record<UserRole, number> = {
       [UserRole.ADMIN]: 100,
       [UserRole.SPECIAL]: 80,
       [UserRole.CASHIER]: 50,

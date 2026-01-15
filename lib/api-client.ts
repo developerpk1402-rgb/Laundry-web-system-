@@ -1,12 +1,10 @@
 
-import { AuthTokens } from './auth-service';
 import { BRANCHES, GARMENTS, MOCK_CUSTOMERS } from '../constants';
-import { OrderStatus } from '../types';
 
 /**
- * LavanFlow OS - Local-First API Client
- * This client simulates a NestJS + Prisma backend using localStorage 
- * to provide full functionality in environments without a real server.
+ * LavanFlow OS - Local-First API Client (Vercel Optimized)
+ * This client simulates a NestJS + Prisma backend using localStorage.
+ * It is designed to be SSR-safe for Next.js deployments.
  */
 
 const STORAGE_KEY = 'lavanflow_db';
@@ -54,14 +52,21 @@ class ApiClient {
   }
 
   private getDb() {
+    if (typeof window === 'undefined') {
+      return { 
+        orders: [], staff: [], customers: [], branches: BRANCHES, 
+        auditLogs: [], vouchers: [], backups: [] 
+      };
+    }
     return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
   }
 
   private saveDb(db: any) {
+    if (typeof window === 'undefined') return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
   }
 
-  private async simulateLatency(ms: number = 400) {
+  private async simulateLatency(ms: number = 200) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
@@ -72,18 +77,18 @@ class ApiClient {
     const path = endpoint.split('?')[0];
     const params = new URLSearchParams(endpoint.split('?')[1] || '');
 
-    // MOCK ROUTING LOGIC
     try {
-      // ORDERS
+      // --- ORDERS ---
       if (path === '/orders') {
         if (options.method === 'GET') {
-          let results = db.orders;
+          let results = db.orders || [];
           if (params.get('status')) results = results.filter((o: any) => o.status === params.get('status'));
           return results;
         }
         if (options.method === 'POST') {
           const newOrder = JSON.parse(options.body as string);
           newOrder.id = Math.random().toString(36).substr(2, 9);
+          db.orders = db.orders || [];
           db.orders.unshift(newOrder);
           this.saveDb(db);
           return newOrder;
@@ -105,27 +110,29 @@ class ApiClient {
       }
 
       if (path === '/orders/analytics/summary') {
+        const orders = db.orders || [];
         return {
-          received: db.orders.filter((o: any) => o.status === 'Received').length,
-          processing: db.orders.filter((o: any) => o.status === 'In Process').length,
-          completed: db.orders.filter((o: any) => o.status === 'Completed').length,
-          delivered: db.orders.filter((o: any) => o.status === 'Delivered').length,
-          revenue: db.orders.reduce((sum: number, o: any) => sum + o.total, 0)
+          received: orders.filter((o: any) => o.status === 'Received').length,
+          processing: orders.filter((o: any) => o.status === 'In Process').length,
+          completed: orders.filter((o: any) => o.status === 'Completed').length,
+          delivered: orders.filter((o: any) => o.status === 'Delivered').length,
+          revenue: orders.reduce((sum: number, o: any) => sum + (o.total || 0), 0)
         };
       }
 
-      // STAFF
+      // --- STAFF ---
       if (path === '/staff/active') {
         const branchId = params.get('branchId');
-        let results = db.staff;
+        let results = db.staff || [];
         if (branchId) results = results.filter((s: any) => s.branchId === branchId);
         return results;
       }
 
       if (path === '/staff') {
-        if (options.method === 'GET') return db.staff;
+        if (options.method === 'GET') return db.staff || [];
         if (options.method === 'POST') {
           const newUser = JSON.parse(options.body as string);
+          db.staff = db.staff || [];
           db.staff.push(newUser);
           this.saveDb(db);
           return newUser;
@@ -134,61 +141,65 @@ class ApiClient {
 
       if (path.startsWith('/staff/') && options.method === 'DELETE') {
         const id = path.split('/')[2];
-        db.staff = db.staff.filter((s: any) => s.id !== id);
+        db.staff = (db.staff || []).filter((s: any) => s.id !== id);
         this.saveDb(db);
         return { success: true };
       }
 
-      // CUSTOMERS
+      // --- CUSTOMERS ---
       if (path === '/customers') {
         if (options.method === 'GET') {
           const search = params.get('search')?.toLowerCase();
-          if (!search) return db.customers;
-          return db.customers.filter((c: any) => 
+          const customers = db.customers || MOCK_CUSTOMERS;
+          if (!search) return customers;
+          return customers.filter((c: any) => 
             c.name.toLowerCase().includes(search) || 
             c.phone.includes(search) || 
-            c.code.toLowerCase().includes(search)
+            (c.code && c.code.toLowerCase().includes(search))
           );
         }
         if (options.method === 'POST') {
           const newCustomer = JSON.parse(options.body as string);
           newCustomer.id = Math.random().toString(36).substr(2, 9);
           newCustomer.code = `CUST-${Math.floor(1000 + Math.random() * 9000)}`;
+          db.customers = db.customers || [];
           db.customers.push(newCustomer);
           this.saveDb(db);
           return newCustomer;
         }
       }
 
-      // BRANCHES
+      // --- BRANCHES ---
       if (path === '/branches') {
-        return db.branches;
+        return db.branches || BRANCHES;
       }
 
-      // VOUCHERS / NCF
+      // --- VOUCHERS / NCF ---
       if (path === '/vouchers') {
-        return db.vouchers;
+        return db.vouchers || [];
       }
 
       if (path === '/vouchers/burn') {
         const { type, branchId } = JSON.parse(options.body as string);
-        const rangeIndex = db.vouchers.findIndex((v: any) => v.type === type && v.branchId === branchId);
+        const vouchers = db.vouchers || [];
+        const rangeIndex = vouchers.findIndex((v: any) => v.type === type && v.branchId === branchId);
         if (rangeIndex > -1) {
-          const range = db.vouchers[rangeIndex];
+          const range = vouchers[rangeIndex];
           const ncf = range.prefix + range.current.toString().padStart(8, '0');
-          db.vouchers[rangeIndex].current += 1;
+          vouchers[rangeIndex].current += 1;
           this.saveDb(db);
           return ncf;
         }
         return '';
       }
 
-      // AUDIT LOGS
+      // --- AUDIT LOGS ---
       if (path === '/audit-logs') {
-        if (options.method === 'GET') return db.auditLogs;
+        if (options.method === 'GET') return db.auditLogs || [];
         if (options.method === 'POST') {
           const log = JSON.parse(options.body as string);
           log.id = Math.random().toString(36).substr(2, 9);
+          db.auditLogs = db.auditLogs || [];
           db.auditLogs.unshift(log);
           this.saveDb(db);
           return log;
@@ -200,18 +211,18 @@ class ApiClient {
         }
       }
 
-      // SYSTEM
+      // --- SYSTEM ---
       if (path === '/system/health') {
         return {
           database: 'ONLINE',
-          latency: Math.floor(Math.random() * 50) + 10,
+          latency: Math.floor(Math.random() * 30) + 5,
           lastBackup: new Date().toISOString(),
           syncQueue: 0
         };
       }
 
       if (path === '/system/backup/history') {
-        return db.backups;
+        return db.backups || [];
       }
 
       if (path === '/system/backup/trigger') {
@@ -221,20 +232,30 @@ class ApiClient {
           type: 'MANUAL',
           status: 'SUCCESS',
           fileSize: Math.floor(Math.random() * 5000) + 1000,
-          details: 'Full state snapshot archived to LavanCloud.'
+          details: 'Secure state snapshot generated locally.'
         };
+        db.backups = db.backups || [];
         db.backups.unshift(newBackup);
         this.saveDb(db);
         return newBackup;
       }
 
-      // Fallback for missing routes
-      console.warn(`[Mock API] 404 Not Found: ${endpoint}`);
-      throw new Error(`Endpoint ${endpoint} not implemented in mock client.`);
+      // --- AUTH (NEW) ---
+      if (path === '/auth/login') {
+        const creds = JSON.parse(options.body as string);
+        const admin = (db.staff || []).find((s: any) => s.username.toLowerCase() === creds.username.toLowerCase()) || db.staff[0];
+        return {
+          user: admin,
+          tokens: { accessToken: 'mock-access', refreshToken: 'mock-refresh' }
+        };
+      }
+
+      console.warn(`[Mock API] 404: ${endpoint}`);
+      return null;
 
     } catch (error) {
-      console.error(`[Security Audit] API Failure:`, error);
-      throw new Error('Communication with secure nodes failed.');
+      console.error(`[Mock Kernel] Execution Error:`, error);
+      return null;
     }
   }
 
