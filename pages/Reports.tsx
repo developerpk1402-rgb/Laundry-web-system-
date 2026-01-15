@@ -24,7 +24,9 @@ import {
   Mail,
   CheckCircle,
   Send,
-  Loader2
+  Loader2,
+  CreditCard,
+  Banknote
 } from 'lucide-react';
 import { getOrders } from '../services/orderService';
 import { Order, Branch, TaxReceiptType } from '../types';
@@ -36,7 +38,6 @@ const Reports: React.FC<{ branch: Branch }> = ({ branch }) => {
   const [mailSent, setMailSent] = useState(false);
 
   useEffect(() => {
-    // Fix: Await getOrders() then filter results.
     const fetchOrders = async () => {
       const allOrders = await getOrders();
       setOrders(allOrders.filter(o => o.branch === branch.name));
@@ -55,11 +56,23 @@ const Reports: React.FC<{ branch: Branch }> = ({ branch }) => {
     }, 2000);
   };
 
+  const revenueByPayment = orders.reduce((acc, o) => {
+    const method = o.paymentMethod || 'Cash';
+    acc[method] = (acc[method] || 0) + o.total;
+    return acc;
+  }, {} as Record<string, number>);
+
   const financialStats = [
-    { label: 'Total Revenue', value: 'RD$ 45,670.00', icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
-    { label: 'Pending Collections', value: 'RD$ 8,120.00', icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-900/30' },
-    { label: 'Orders Processed', value: '142', icon: ShoppingBag, color: 'text-blue-600', bg: 'bg-blue-100 dark:bg-blue-900/30' },
+    { label: 'Total Revenue', value: `RD$ ${orders.reduce((s,o) => s+o.total,0).toLocaleString()}`, icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
+    { label: 'Pending Collections', value: `RD$ ${orders.reduce((s,o) => s+o.remainingBalance,0).toLocaleString()}`, icon: TrendingUp, color: 'text-amber-600', bg: 'bg-amber-100 dark:bg-amber-900/30' },
+    { label: 'Orders Processed', value: orders.length.toString(), icon: ShoppingBag, color: 'text-blue-600', bg: 'bg-blue-100 dark:bg-blue-900/30' },
     { label: 'Fiscal Receipts', value: fiscalOrders.length.toString(), icon: FileText, color: 'text-indigo-600', bg: 'bg-indigo-100 dark:bg-indigo-900/30' },
+  ];
+
+  const paymentStats = [
+    { label: 'Cash Volume', value: revenueByPayment['Cash'] || 0, icon: Banknote, color: 'text-emerald-500' },
+    { label: 'Card Volume', value: revenueByPayment['Card'] || 0, icon: CreditCard, color: 'text-blue-500' },
+    { label: 'Transfer Volume', value: revenueByPayment['Transfer'] || 0, icon: Send, color: 'text-amber-500' },
   ];
 
   const barData = [
@@ -72,31 +85,25 @@ const Reports: React.FC<{ branch: Branch }> = ({ branch }) => {
     { name: 'Sun', revenue: 2100 },
   ];
 
-  const pieData = [
-    { name: 'Wash & Iron', value: 400, color: '#3b82f6' },
-    { name: 'Iron Only', value: 300, color: '#10b981' },
-    { name: 'Alterations', value: 150, color: '#f59e0b' },
-  ];
-
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black tracking-tight dark:text-slate-100 transition-colors">Reporting Hub</h1>
-          <p className="text-slate-500 dark:text-slate-400 font-medium transition-colors">Performance and Fiscal Compliance</p>
+          <p className="text-slate-500 dark:text-slate-400 font-medium">Performance and Fiscal Analytics for {branch.name}</p>
         </div>
         <div className="flex gap-2 p-1 bg-slate-200/50 dark:bg-slate-800/50 rounded-2xl transition-colors">
           <button 
             onClick={() => setActiveView('Standard')}
-            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeView === 'Standard' ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeView === 'Standard' ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             Operational
           </button>
           <button 
             onClick={() => setActiveView('607')}
-            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeView === '607' ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+            className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${activeView === '607' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
-            607+ Declaration
+            607 Declaration
           </button>
         </div>
       </div>
@@ -110,86 +117,65 @@ const Reports: React.FC<{ branch: Branch }> = ({ branch }) => {
                   <div className={`${stat.bg} p-2.5 rounded-xl`}>
                     <stat.icon size={20} className={stat.color} />
                   </div>
-                  <h3 className="text-slate-500 dark:text-slate-500 text-sm font-bold uppercase tracking-widest">{stat.label}</h3>
+                  <h3 className="text-slate-500 text-sm font-bold uppercase tracking-widest">{stat.label}</h3>
                 </div>
                 <p className="text-2xl font-black dark:text-slate-100">{stat.value}</p>
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
               <div className="flex items-center justify-between mb-8">
-                <h2 className="text-lg font-bold dark:text-slate-100">Revenue Trend</h2>
-                <select className="bg-slate-50 dark:bg-slate-800 border-none rounded-lg text-xs font-bold p-2 focus:ring-0 dark:text-slate-200 transition-colors">
-                  <option>Last 7 Days</option>
-                  <option>This Month</option>
-                </select>
+                <h2 className="text-lg font-bold dark:text-slate-100 italic">Daily Performance</h2>
               </div>
-              <div className="h-64">
+              <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={barData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="currentColor" className="text-slate-100 dark:text-slate-800 opacity-50 transition-colors" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800" />
+                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
                     <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-                    <Tooltip 
-                      cursor={{fill: 'currentColor', className: 'text-slate-50 dark:text-slate-800/50'}}
-                      contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', backgroundColor: '#0f172a', color: '#fff'}}
-                    />
-                    <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', backgroundColor: '#0f172a', color: '#fff' }} />
+                    <Bar dataKey="revenue" fill="#3b82f6" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="bg-white dark:bg-slate-900 p-8 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm transition-colors">
-              <h2 className="text-lg font-bold mb-8 dark:text-slate-100">Service Distribution</h2>
-              <div className="flex flex-col md:flex-row items-center gap-8">
-                <div className="h-64 w-full md:w-1/2">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={pieData}
-                        innerRadius={60}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        {pieData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', backgroundColor: '#0f172a', color: '#fff'}}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="w-full md:w-1/2 space-y-4">
-                  {pieData.map((item) => (
-                    <div key={item.name} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl transition-colors">
-                      <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full" style={{backgroundColor: item.color}}></span>
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">{item.name}</span>
-                      </div>
-                      <span className="text-sm font-black dark:text-slate-200">{item.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <div className="bg-[#020617] p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden flex flex-col justify-between">
+               <div className="absolute inset-0 opacity-10 scan-line Desert pointer-events-none"></div>
+               <div className="relative z-10 space-y-8">
+                  <h2 className="text-xl font-black italic">Payment Analysis</h2>
+                  <div className="space-y-6">
+                     {paymentStats.map(stat => (
+                       <div key={stat.label} className="space-y-2">
+                          <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest text-slate-500">
+                             <div className="flex items-center gap-2"><stat.icon size={14} className={stat.color} /> {stat.label}</div>
+                             <span className="text-white">RD$ {stat.value.toLocaleString()}</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                             <div className={`h-full ${stat.color.replace('text', 'bg')}`} style={{ width: `${Math.min(100, (stat.value / orders.reduce((s,o)=>s+o.total,1)) * 100)}%` }}></div>
+                          </div>
+                       </div>
+                     ))}
+                  </div>
+               </div>
+               <button className="relative z-10 w-full py-4 mt-8 bg-white/10 rounded-2xl border border-white/10 font-black text-[10px] uppercase tracking-widest hover:bg-white/20 transition-all flex items-center justify-center gap-2">
+                  <Printer size={16} /> Print Operational Summary
+               </button>
             </div>
           </div>
         </>
       ) : (
         <div className="space-y-6 animate-in slide-in-from-right-4 duration-500">
-          <div className="bg-indigo-900 dark:bg-indigo-950 text-white p-8 rounded-[2rem] shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 border border-white/5 transition-colors">
+          <div className="bg-indigo-900 dark:bg-indigo-950 text-white p-8 rounded-[3rem] shadow-xl flex flex-col md:flex-row justify-between items-center gap-6 border border-white/5 transition-colors">
             <div className="flex items-center gap-6">
               <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-md">
                 <FileText size={32} />
               </div>
               <div>
-                <h2 className="text-2xl font-black tracking-tight">DGII 607+ Declaration</h2>
-                <p className="text-indigo-200 text-sm font-medium">Sales and Services Reporting for Fiscal Compliance</p>
+                <h2 className="text-2xl font-black tracking-tight italic">607 Declaration Protocol</h2>
+                <p className="text-indigo-200 text-xs font-black uppercase tracking-widest mt-1">Fiscal Compliance Node</p>
               </div>
             </div>
             <div className="flex gap-3">
@@ -197,57 +183,54 @@ const Reports: React.FC<{ branch: Branch }> = ({ branch }) => {
                 onClick={handleMailReport}
                 disabled={isMailing}
                 className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg ${
-                  mailSent 
-                  ? 'bg-emerald-500 text-white' 
-                  : 'bg-white text-indigo-900 hover:bg-indigo-50'
+                  mailSent ? 'bg-emerald-500 text-white' : 'bg-white text-indigo-900 hover:bg-indigo-50'
                 }`}
               >
                 {isMailing ? <Loader2 className="animate-spin" size={20} /> : mailSent ? <CheckCircle size={20} /> : <Mail size={20} />}
-                {mailSent ? 'Sent to Accountant' : isMailing ? 'Mailing...' : 'Mail 607+ Report'}
+                {mailSent ? 'Dispatched to Accountant' : isMailing ? 'Processing...' : 'Auto-Mail Report'}
               </button>
               <button className="flex items-center gap-2 px-6 py-3 bg-indigo-500 text-white rounded-xl font-bold hover:bg-indigo-600 transition-all shadow-lg">
-                <Download size={20} /> Export TXT (DGII)
+                <Download size={20} /> Export DGII (.txt)
               </button>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-slate-900 rounded-[2rem] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden transition-colors">
+          <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-500 font-bold uppercase tracking-widest text-[10px] transition-colors">
+                <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-widest text-[10px]">
                   <tr>
-                    <th className="px-6 py-5 text-left">RNC / Cedula</th>
-                    <th className="px-6 py-5 text-left">NCF Number</th>
-                    <th className="px-6 py-5 text-left">Receipt Type</th>
+                    <th className="px-6 py-5 text-left">Customer ID</th>
+                    <th className="px-6 py-5 text-left">NCF Sequence</th>
+                    <th className="px-6 py-5 text-left">Fiscal Type</th>
                     <th className="px-6 py-5 text-left">Date</th>
                     <th className="px-6 py-5 text-right">Taxable (RD$)</th>
                     <th className="px-6 py-5 text-right">ITBIS (18%)</th>
-                    <th className="px-6 py-5 text-right">Total</th>
+                    <th className="px-6 py-5 text-right">Total Collection</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 transition-colors">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {fiscalOrders.length > 0 ? (
                     fiscalOrders.map(order => (
                       <tr key={order.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
-                        <td className="px-6 py-5 font-mono font-medium dark:text-slate-300">131-00200-1</td>
+                        <td className="px-6 py-5 font-mono text-slate-500">{order.customerPhone.replace(/-/g, '')}</td>
                         <td className="px-6 py-5 font-mono font-black text-indigo-600 dark:text-indigo-400">{order.ncf}</td>
                         <td className="px-6 py-5">
                           <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded text-[10px] font-black uppercase">
                             {order.taxReceiptType.split('(')[1].replace(')', '')}
                           </span>
                         </td>
-                        <td className="px-6 py-5 text-slate-500 dark:text-slate-500 font-medium">{order.datePlaced}</td>
-                        <td className="px-6 py-5 text-right font-medium dark:text-slate-200">RD$ {order.subtotal.toFixed(2)}</td>
-                        <td className="px-6 py-5 text-right font-medium dark:text-slate-200">RD$ {order.tax.toFixed(2)}</td>
-                        <td className="px-6 py-5 text-right font-black dark:text-slate-100">RD$ {order.total.toFixed(2)}</td>
+                        <td className="px-6 py-5 text-slate-400">{order.datePlaced}</td>
+                        <td className="px-6 py-5 text-right font-black">RD$ {order.subtotal.toFixed(2)}</td>
+                        <td className="px-6 py-5 text-right font-black">RD$ {order.tax.toFixed(2)}</td>
+                        <td className="px-6 py-5 text-right font-black text-indigo-600">RD$ {order.total.toFixed(2)}</td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="py-20 text-center text-slate-400 dark:text-slate-600">
-                        <Send size={48} className="mx-auto mb-4 opacity-10 dark:opacity-5" />
-                        <p className="font-bold">No fiscal orders found in this period.</p>
-                        <p className="text-xs">Ensure you issue Tax Credit (B01) or Consumer (B02) receipts to populate this list.</p>
+                      <td colSpan={7} className="py-24 text-center text-slate-400">
+                        <FileText size={48} className="mx-auto mb-4 opacity-10" />
+                        <p className="font-black text-xs uppercase tracking-widest">No Fiscal Transactions Logged</p>
                       </td>
                     </tr>
                   )}

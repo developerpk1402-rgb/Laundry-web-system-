@@ -48,13 +48,35 @@ export enum AuditAction {
   STAFF_UPDATE = 'STAFF_UPDATE',
   BRANCH_SWITCH = 'BRANCH_SWITCH',
   SUPPLY_UPDATE = 'SUPPLY_UPDATE',
-  DATABASE_BACKUP = 'DATABASE_BACKUP'
+  DATABASE_BACKUP = 'DATABASE_BACKUP',
+  SETTINGS_UPDATE = 'SETTINGS_UPDATE'
 }
 
 export enum BackupType {
   AUTOMATED = 'AUTOMATED',
   MANUAL = 'MANUAL',
   SYSTEM_CHECK = 'SYSTEM_CHECK'
+}
+
+export enum PrinterType {
+  A4 = 'A4 Paper',
+  THERMAL_80MM = '80mm Thermal'
+}
+
+export interface CompanyInfo {
+  name: string;
+  slogan: string;
+  rnc: string;
+  address: string;
+  phone: string;
+  email: string;
+  itbisRate: number;
+}
+
+export interface BranchSettings {
+  printerType: PrinterType;
+  autoPrintReceipt: boolean;
+  defaultTaxReceipt: TaxReceiptType;
 }
 
 export interface BackupLog {
@@ -123,6 +145,7 @@ export interface OrderItem {
   isExpress: boolean;
   price: number;
   total: number;
+  notes?: string;
 }
 
 export interface Order {
@@ -148,6 +171,7 @@ export interface Order {
   taxReceiptType: TaxReceiptType;
   ncf?: string;
   notified: boolean;
+  paymentMethod?: 'Cash' | 'Card' | 'Transfer';
 }
 
 export interface Branch {

@@ -20,12 +20,12 @@ interface DashboardClientProps {
   staff: User[];
 }
 
-export default function DashboardClient({ initialOrders, initialStats, staff }: DashboardClientProps) {
+export default function DashboardClient({ initialOrders = [], initialStats = {}, staff = [] }: DashboardClientProps) {
   const stats = [
-    { label: 'Received', value: initialStats.received, icon: ShoppingBag, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-    { label: 'In Process', value: initialStats.processing, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-    { label: 'Completed', value: initialStats.completed, icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    { label: 'Delivered', value: initialStats.delivered, icon: Truck, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
+    { label: 'Received', value: initialStats?.received || 0, icon: ShoppingBag, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    { label: 'In Process', value: initialStats?.processing || 0, icon: Zap, color: 'text-amber-500', bg: 'bg-amber-500/10' },
+    { label: 'Completed', value: initialStats?.completed || 0, icon: CheckCircle2, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+    { label: 'Delivered', value: initialStats?.delivered || 0, icon: Truck, color: 'text-indigo-500', bg: 'bg-indigo-500/10' },
   ];
 
   return (
@@ -85,7 +85,7 @@ export default function DashboardClient({ initialOrders, initialStats, staff }: 
                         <span className="text-[10px] font-black uppercase tracking-[0.2em] text-blue-400">Total Valuation</span>
                      </div>
                      <h2 className="text-6xl md:text-8xl font-black tracking-tighter italic leading-none">
-                        RD$ {initialStats.revenue.toLocaleString()}
+                        RD$ {(initialStats?.revenue || 0).toLocaleString()}
                      </h2>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -103,7 +103,7 @@ export default function DashboardClient({ initialOrders, initialStats, staff }: 
                   <button className="text-[10px] font-black uppercase text-blue-600 hover:underline tracking-widest">Global Feed</button>
                </div>
                <div className="space-y-4">
-                  {initialOrders.map((order, idx) => (
+                  {(initialOrders || []).map((order, idx) => (
                     <motion.div 
                       key={order.id}
                       initial={{ opacity: 0, x: -20 }}
@@ -113,7 +113,7 @@ export default function DashboardClient({ initialOrders, initialStats, staff }: 
                     >
                        <div className="flex items-center gap-6">
                           <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-2xl flex items-center justify-center font-black text-blue-600 italic border border-slate-100 dark:border-slate-700 shadow-sm">
-                             {order.customerName[0]}
+                             {order.customerName?.[0] || 'O'}
                           </div>
                           <div>
                              <p className="font-black dark:text-white leading-none group-hover:text-blue-500 transition-colors">{order.customerName}</p>
@@ -121,11 +121,17 @@ export default function DashboardClient({ initialOrders, initialStats, staff }: 
                           </div>
                        </div>
                        <div className="text-right">
-                          <p className="font-black dark:text-white">RD$ {order.total.toFixed(0)}</p>
+                          <p className="font-black dark:text-white">RD$ {(order.total || 0).toFixed(0)}</p>
                           <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">{order.status}</span>
                        </div>
                     </motion.div>
                   ))}
+                  {(!initialOrders || initialOrders.length === 0) && (
+                    <div className="py-20 text-center text-slate-400">
+                      <ShoppingBag className="mx-auto mb-4 opacity-10" size={48} />
+                      <p className="font-bold text-xs uppercase tracking-widest">No active units in pipeline</p>
+                    </div>
+                  )}
                </div>
             </div>
          </div>
@@ -133,11 +139,11 @@ export default function DashboardClient({ initialOrders, initialStats, staff }: 
          <div className="xl:col-span-4 bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-slate-800 p-10">
             <h3 className="text-xl font-black dark:text-white italic mb-8">Active Staff</h3>
             <div className="space-y-3">
-               {staff.map(u => (
+               {(staff || []).map(u => (
                  <div key={u.id} className="flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-all">
                     <div className="flex items-center gap-4">
                        <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center font-black">
-                          {u.username[0]}
+                          {u.username?.[0] || 'U'}
                        </div>
                        <div>
                           <p className="font-bold text-sm dark:text-white">{u.username}</p>

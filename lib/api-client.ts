@@ -1,5 +1,6 @@
 
 import { BRANCHES, GARMENTS, MOCK_CUSTOMERS } from '../constants';
+import { TaxReceiptType, PrinterType } from '../types';
 
 /**
  * LavanFlow OS - Local-First API Client (Vercel Optimized)
@@ -24,7 +25,7 @@ class ApiClient {
     if (typeof window === 'undefined') return;
     
     const db = localStorage.getItem(STORAGE_KEY);
-    if (!db) {
+    if (!db || db === 'null') {
       const initialDb = {
         branches: BRANCHES,
         inventory: GARMENTS,
@@ -42,9 +43,27 @@ class ApiClient {
         ],
         auditLogs: [],
         vouchers: BRANCHES.flatMap(b => [
-          { id: `v-${b.id}-1`, type: 'Tax Credit (B01)', prefix: 'B01', start: 1, end: 100, current: 1, branchId: b.id, status: 'Active', createdAt: new Date().toISOString() },
-          { id: `v-${b.id}-2`, type: 'Final Consumer (B02)', prefix: 'B02', start: 1, end: 500, current: 1, branchId: b.id, status: 'Active', createdAt: new Date().toISOString() }
+          { id: `v-${b.id}-1`, type: TaxReceiptType.TAX_CREDIT, prefix: 'B01', start: 1, end: 100, current: 1, branchId: b.id, status: 'Active', createdAt: new Date().toISOString() },
+          { id: `v-${b.id}-2`, type: TaxReceiptType.FINAL_CONSUMER, prefix: 'B02', start: 1, end: 500, current: 1, branchId: b.id, status: 'Active', createdAt: new Date().toISOString() },
+          { id: `v-${b.id}-3`, type: TaxReceiptType.GOVERNMENT, prefix: 'B15', start: 1, end: 50, current: 1, branchId: b.id, status: 'Active', createdAt: new Date().toISOString() }
         ]),
+        company: {
+          name: 'LavanFlow Enterprise',
+          slogan: 'Excellence in Care',
+          rnc: '101002003',
+          address: 'Av. Winston Churchill 12, DN',
+          phone: '809-555-0000',
+          email: 'contact@lavanflow.com',
+          itbisRate: 0.18
+        },
+        branchSettings: BRANCHES.reduce((acc, b) => ({
+          ...acc,
+          [b.id]: {
+            printerType: PrinterType.THERMAL_80MM,
+            autoPrintReceipt: true,
+            defaultTaxReceipt: TaxReceiptType.FINAL_CONSUMER
+          }
+        }), {}),
         backups: []
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(initialDb));
@@ -53,12 +72,23 @@ class ApiClient {
 
   private getDb() {
     if (typeof window === 'undefined') {
-      return { 
-        orders: [], staff: [], customers: [], branches: BRANCHES, 
-        auditLogs: [], vouchers: [], backups: [] 
-      };
+      return this.getFallbackDb();
     }
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    try {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (!data || data === 'null') return this.getFallbackDb();
+      return JSON.parse(data);
+    } catch (e) {
+      return this.getFallbackDb();
+    }
+  }
+
+  private getFallbackDb() {
+    return { 
+      orders: [], staff: [], customers: [], branches: BRANCHES, 
+      auditLogs: [], vouchers: [], backups: [], company: {}, inventory: GARMENTS,
+      branchSettings: {}
+    };
   }
 
   private saveDb(db: any) {
@@ -66,14 +96,14 @@ class ApiClient {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
   }
 
-  private async simulateLatency(ms: number = 200) {
+  private async simulateLatency(ms: number = 100) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   private async fetcher(endpoint: string, options: RequestInit = {}) {
     await this.simulateLatency();
 
-    const db = this.getDb();
+    const db = this.getDb() || this.getFallbackDb();
     const path = endpoint.split('?')[0];
     const params = new URLSearchParams(endpoint.split('?')[1] || '');
 
@@ -98,7 +128,7 @@ class ApiClient {
       if (path.startsWith('/orders/') && path.endsWith('/status')) {
         const id = path.split('/')[2];
         const { status } = JSON.parse(options.body as string);
-        const orderIndex = db.orders.findIndex((o: any) => o.id === id);
+        const orderIndex = (db.orders || []).findIndex((o: any) => o.id === id);
         if (orderIndex > -1) {
           db.orders[orderIndex].status = status;
           if (status === 'Completed' && !db.orders[orderIndex].location) {
@@ -120,6 +150,44 @@ class ApiClient {
         };
       }
 
+      // --- INVENTORY ---
+      if (path === '/inventory') {
+        if (options.method === 'GET') return db.inventory || GARMENTS;
+      }
+      if (path.startsWith('/inventory/') && path.endsWith('/price')) {
+        const id = path.split('/')[2];
+        const { basePrice } = JSON.parse(options.body as string);
+        const inventory = db.inventory || GARMENTS;
+        const idx = inventory.findIndex((g: any) => g.id === id);
+        if (idx > -1) {
+          inventory[idx].basePrice = basePrice;
+          db.inventory = inventory;
+          this.saveDb(db);
+          return db.inventory[idx];
+        }
+      }
+
+      // --- SETTINGS / COMPANY ---
+      if (path === '/settings/company') {
+        if (options.method === 'GET') return db.company || {};
+        if (options.method === 'POST') {
+          db.company = JSON.parse(options.body as string);
+          this.saveDb(db);
+          return db.company;
+        }
+      }
+
+      if (path.startsWith('/settings/branch/')) {
+        const branchId = path.split('/')[3];
+        db.branchSettings = db.branchSettings || {};
+        if (options.method === 'GET') return db.branchSettings[branchId] || {};
+        if (options.method === 'POST') {
+          db.branchSettings[branchId] = JSON.parse(options.body as string);
+          this.saveDb(db);
+          return db.branchSettings[branchId];
+        }
+      }
+
       // --- STAFF ---
       if (path === '/staff/active') {
         const branchId = params.get('branchId');
@@ -138,12 +206,61 @@ class ApiClient {
           return newUser;
         }
       }
-
-      if (path.startsWith('/staff/') && options.method === 'DELETE') {
+      if (path.startsWith('/staff/')) {
         const id = path.split('/')[2];
-        db.staff = (db.staff || []).filter((s: any) => s.id !== id);
-        this.saveDb(db);
-        return { success: true };
+        const staff = db.staff || [];
+        if (options.method === 'PATCH') {
+          const updates = JSON.parse(options.body as string);
+          const idx = staff.findIndex((s: any) => s.id === id);
+          if (idx > -1) {
+            staff[idx] = { ...staff[idx], ...updates };
+            db.staff = staff;
+            this.saveDb(db);
+            return db.staff[idx];
+          }
+        }
+        if (options.method === 'DELETE') {
+           db.staff = staff.filter((s: any) => s.id !== id);
+           this.saveDb(db);
+           return { success: true };
+        }
+      }
+
+      // --- VOUCHERS ---
+      if (path === '/vouchers') {
+        if (options.method === 'GET') return db.vouchers || [];
+        if (options.method === 'POST') {
+          const newRange = JSON.parse(options.body as string);
+          newRange.id = Math.random().toString(36).substr(2, 9);
+          newRange.createdAt = new Date().toISOString();
+          newRange.status = 'Active';
+          db.vouchers = db.vouchers || [];
+          db.vouchers.push(newRange);
+          this.saveDb(db);
+          return newRange;
+        }
+      }
+      if (path.startsWith('/vouchers/')) {
+        const id = path.split('/')[2];
+        if (options.method === 'DELETE') {
+          db.vouchers = (db.vouchers || []).filter((v: any) => v.id !== id);
+          this.saveDb(db);
+          return { success: true };
+        }
+      }
+      if (path === '/vouchers/burn') {
+        const { type, branchId } = JSON.parse(options.body as string);
+        const vouchers = db.vouchers || [];
+        const rangeIdx = vouchers.findIndex((v: any) => v.type === type && v.branchId === branchId && v.current <= v.end);
+        if (rangeIdx > -1) {
+          const range = vouchers[rangeIdx];
+          const ncf = range.prefix + range.current.toString().padStart(8, '0');
+          vouchers[rangeIdx].current += 1;
+          db.vouchers = vouchers;
+          this.saveDb(db);
+          return ncf;
+        }
+        return '';
       }
 
       // --- CUSTOMERS ---
@@ -174,25 +291,6 @@ class ApiClient {
         return db.branches || BRANCHES;
       }
 
-      // --- VOUCHERS / NCF ---
-      if (path === '/vouchers') {
-        return db.vouchers || [];
-      }
-
-      if (path === '/vouchers/burn') {
-        const { type, branchId } = JSON.parse(options.body as string);
-        const vouchers = db.vouchers || [];
-        const rangeIndex = vouchers.findIndex((v: any) => v.type === type && v.branchId === branchId);
-        if (rangeIndex > -1) {
-          const range = vouchers[rangeIndex];
-          const ncf = range.prefix + range.current.toString().padStart(8, '0');
-          vouchers[rangeIndex].current += 1;
-          this.saveDb(db);
-          return ncf;
-        }
-        return '';
-      }
-
       // --- AUDIT LOGS ---
       if (path === '/audit-logs') {
         if (options.method === 'GET') return db.auditLogs || [];
@@ -220,11 +318,7 @@ class ApiClient {
           syncQueue: 0
         };
       }
-
-      if (path === '/system/backup/history') {
-        return db.backups || [];
-      }
-
+      if (path === '/system/backup/history') return db.backups || [];
       if (path === '/system/backup/trigger') {
         const newBackup = {
           id: Math.random().toString(36).substr(2, 9),
@@ -240,10 +334,11 @@ class ApiClient {
         return newBackup;
       }
 
-      // --- AUTH (NEW) ---
+      // --- AUTH ---
       if (path === '/auth/login') {
         const creds = JSON.parse(options.body as string);
-        const admin = (db.staff || []).find((s: any) => s.username.toLowerCase() === creds.username.toLowerCase()) || db.staff[0];
+        const staff = db.staff || [];
+        const admin = staff.find((s: any) => s.username.toLowerCase() === (creds.username || '').toLowerCase()) || staff[0];
         return {
           user: admin,
           tokens: { accessToken: 'mock-access', refreshToken: 'mock-refresh' }
@@ -251,12 +346,20 @@ class ApiClient {
       }
 
       console.warn(`[Mock API] 404: ${endpoint}`);
-      return null;
+      return this.getDefaultResponseForPath(path);
 
     } catch (error) {
       console.error(`[Mock Kernel] Execution Error:`, error);
-      return null;
+      return this.getDefaultResponseForPath(path);
     }
+  }
+
+  private getDefaultResponseForPath(path: string) {
+    const listEndpoints = ['/orders', '/customers', '/staff', '/staff/active', '/audit-logs', '/vouchers', '/inventory', '/system/backup/history', '/chat/conversations'];
+    if (listEndpoints.some(ep => path.includes(ep))) {
+      return [];
+    }
+    return null;
   }
 
   async get(endpoint: string) { return this.fetcher(endpoint, { method: 'GET' }); }

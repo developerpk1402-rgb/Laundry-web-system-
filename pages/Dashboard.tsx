@@ -39,22 +39,34 @@ const Dashboard: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) =
 
   useEffect(() => {
     const fetchData = async () => {
-      // Fix: Await getOrders() and then filter the results.
-      const allOrders = await getOrders();
-      setOrders(allOrders.filter(o => o.branch === branch.name));
       try {
-        const logs = await getAuditLogs();
-        setAuditLogs(logs.slice(0, 5));
+        const allOrders = await getOrders();
+        if (allOrders && Array.isArray(allOrders)) {
+          setOrders(allOrders.filter(o => o.branch === branch.name));
+        } else {
+          setOrders([]);
+        }
         
+        const logs = await getAuditLogs();
+        if (logs && Array.isArray(logs)) {
+          setAuditLogs(logs.slice(0, 5));
+        } else {
+          setAuditLogs([]);
+        }
+
         const health = await getSystemHealth();
         setSystemStatus(health);
+
+        if (user.role === UserRole.ADMIN) {
+          const branchStaff = await getEmployeesByBranch(branch.id);
+          if (branchStaff && Array.isArray(branchStaff)) {
+            setStaff(branchStaff);
+          } else {
+            setStaff([]);
+          }
+        }
       } catch (err) {
-        console.error("Dashboard: Error fetching system data", err);
-      }
-      if (user.role === UserRole.ADMIN) {
-        // Fix: Await getEmployeesByBranch() call.
-        const branchStaff = await getEmployeesByBranch(branch.id);
-        setStaff(branchStaff);
+        console.error("Dashboard: Error fetching operational data", err);
       }
     };
     
@@ -65,6 +77,7 @@ const Dashboard: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) =
   }, [branch, user]);
 
   const filteredOrders = useMemo(() => {
+    if (!orders || !Array.isArray(orders)) return [];
     return orders.filter(order => {
       const date = new Date(order.datePlaced);
       if (isNaN(date.getTime())) return true;
@@ -82,7 +95,7 @@ const Dashboard: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) =
     { label: 'Outbound', value: filteredOrders.filter(o => o.status === OrderStatus.DELIVERED).length, icon: Truck, color: 'text-indigo-500', bg: 'bg-indigo-500/10', status: OrderStatus.DELIVERED },
   ];
 
-  const totalRevenue = useMemo(() => filteredOrders.reduce((sum, o) => sum + o.total, 0), [filteredOrders]);
+  const totalRevenue = useMemo(() => filteredOrders.reduce((sum, o) => sum + (o.total || 0), 0), [filteredOrders]);
 
   return (
     <motion.div 
@@ -183,15 +196,20 @@ const Dashboard: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) =
                    {filteredOrders.slice(0, 6).map((order) => (
                       <div key={order.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 transition-all">
                         <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center font-black text-blue-600 italic border border-slate-100 dark:border-slate-700">{order.customerName[0]}</div>
+                          <div className="w-10 h-10 bg-white dark:bg-slate-800 rounded-xl flex items-center justify-center font-black text-blue-600 italic border border-slate-100 dark:border-slate-700">{order.customerName?.[0] || 'O'}</div>
                           <div>
                             <p className="font-bold text-xs dark:text-white leading-none">{order.customerName}</p>
                             <p className="text-[8px] font-mono text-slate-400 font-bold uppercase mt-1 tracking-widest">{order.code}</p>
                           </div>
                         </div>
-                        <p className="font-black text-xs dark:text-white">RD$ {order.total.toFixed(0)}</p>
+                        <p className="font-black text-xs dark:text-white">RD$ {(order.total || 0).toFixed(0)}</p>
                       </div>
                    ))}
+                   {filteredOrders.length === 0 && (
+                     <div className="col-span-full py-10 text-center text-slate-400 font-bold text-xs uppercase tracking-widest">
+                       No recent throughput
+                     </div>
+                   )}
                 </div>
              </div>
            </div>
@@ -203,17 +221,17 @@ const Dashboard: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) =
                  <h3 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2 italic">
                     <Users className="text-blue-600" /> Crew
                  </h3>
-                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{staff.length} Active</span>
+                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{(staff || []).length} Active</span>
               </div>
               <div className="space-y-4">
-                 {staff.map(employee => {
+                 {(staff || []).map(employee => {
                     const onDuty = isEmployeeOnDuty(employee);
                     return (
                        <div key={employee.id} className="flex items-center justify-between p-4 rounded-3xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all group border border-transparent hover:border-slate-100 dark:hover:border-slate-800">
                           <div className="flex items-center gap-5">
                              <div className="relative">
                                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center font-black text-slate-600 dark:text-slate-300 text-lg italic">
-                                   {employee.username[0]}
+                                   {employee.username?.[0] || 'U'}
                                 </div>
                                 {onDuty && <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-emerald-500 border-4 border-white dark:border-slate-900 rounded-full animate-pulse"></div>}
                              </div>
@@ -228,6 +246,11 @@ const Dashboard: React.FC<{ branch: Branch, user: User }> = ({ branch, user }) =
                        </div>
                     );
                  })}
+                 {(staff || []).length === 0 && (
+                   <div className="py-10 text-center text-slate-400 font-bold text-[10px] uppercase tracking-widest">
+                     Searching for active nodes...
+                   </div>
+                 )}
               </div>
            </div>
         </div>
